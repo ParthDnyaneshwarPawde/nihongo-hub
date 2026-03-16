@@ -7,6 +7,7 @@ import {
   Video, Mic2, Tv, X, Zap, Loader2, Shield, Send, Search, Bell, Settings, LogOut,
   Users, Calendar, BookOpen, ShieldCheck, Filter, Plus, MoreHorizontal, BarChart3, Menu, Clock
 } from 'lucide-react';
+import LiveClassrooms from './LiveClassrooms';
 
 export default function TeacherDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -27,6 +28,14 @@ const [tempClassID, setTempClassID] = useState(null);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [activeRoomCode, setActiveRoomCode] = useState(""); // Fixed missing state
   // const [tempClassData, setTempClassData] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+
+useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged((user) => {
+    setCurrentUser(user);
+  });
+  return () => unsubscribe();
+}, []);
 
   const handleTabClick = (tab) => {
     setActiveTab(tab);
@@ -34,6 +43,7 @@ const [tempClassID, setTempClassID] = useState(null);
   };
 
   useEffect(() => {
+    if (step === 'password') return;
   // 1. Look for any class that is currently 'live'
   const q = query(collection(db, "classes"), where("status", "==", "live"), limit(1));
 
@@ -47,6 +57,7 @@ const [tempClassID, setTempClassID] = useState(null);
       setTempClassData(data);
       setActiveRoomCode(data.roomID);
       setIsLive(true);
+      setStep('selection');
     } else {
       // 3. If no live class exists, reset to the "Start Session" view
       setIsLive(false);
@@ -74,7 +85,8 @@ const [tempClassID, setTempClassID] = useState(null);
     // 1. Save the new class to Firestore
     const docRef = await addDoc(collection(db, "classes"), {
       ...classData,
-      status: classData.status === "Starting Now" ? "live" : "upcoming",
+      hostId: auth.currentUser.uid,
+      status: classData.status === "Starting Now" ? "pending" : "upcoming",
       createdAt: new Date(),
     });
 
@@ -124,7 +136,7 @@ const [tempClassID, setTempClassID] = useState(null);
         code: roomCode,
         password: roomPassword, 
         type: activeType,
-        teacher: auth.currentUser?.displayName || "Tanaka Sensei",
+        teacher: currentUser?.displayName || "Sensei",
         status: 'live',
         createdAt: serverTimestamp(),
         studentsJoined: 0
@@ -224,20 +236,26 @@ const [tempClassID, setTempClassID] = useState(null);
         </nav>
 
         <div className="p-6">
-          <div className={`p-4 rounded-3xl border ${isDarkMode ? 'bg-indigo-600 border-indigo-500 shadow-xl shadow-indigo-600/20' : 'bg-white border-slate-200 shadow-sm'}`}>
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black transition-all duration-300
-                ${isDarkMode ? 'bg-white/10 border border-white/20 text-white shadow-none' : 'bg-indigo-600 text-white border-transparent shadow-lg shadow-indigo-200'}
-              `}>
-                TS
-              </div>
-              <div>
-                <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Tanaka Sensei</p>
-                <p className={`text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-indigo-100' : 'text-indigo-600'}`}>Verified Lead</p>
-              </div>
-            </div>
-          </div>
-        </div>
+  <div className={`p-4 rounded-3xl border ${isDarkMode ? 'bg-indigo-600 border-indigo-500 shadow-xl shadow-indigo-600/20' : 'bg-white border-slate-200 shadow-sm'}`}>
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black transition-all duration-300
+        ${isDarkMode ? 'bg-white/10 border border-white/20 text-white shadow-none' : 'bg-indigo-600 text-white border-transparent shadow-lg shadow-indigo-200'}
+      `}>
+        {/* Get the first two initials of the user's name */}
+        {currentUser?.displayName ? currentUser.displayName.split(' ').map(n => n[0]).join('') : 'S'}
+      </div>
+      <div>
+        {/* THE REAL NAME GOES HERE */}
+        <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {currentUser?.displayName || "Sensei"}
+        </p>
+        <p className={`text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-indigo-100' : 'text-indigo-600'}`}>
+          Verified Lead
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden relative">
@@ -245,6 +263,12 @@ const [tempClassID, setTempClassID] = useState(null);
           指揮
         </div>
 
+        {activeTab === 'live' ? (
+         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <LiveClassrooms isDarkMode={isDarkMode} />
+      </div>
+      ) : (
+      <div>
         <header className={`h-20 border-b backdrop-blur-md px-6 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0A0F1C]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
           <div className="flex items-center gap-4">
             <button className="lg:hidden p-2 text-slate-500" onClick={() => setIsSidebarOpen(true)}><Menu size={24} /></button>
@@ -267,6 +291,8 @@ const [tempClassID, setTempClassID] = useState(null);
             </button>
           </div>
         </header>
+
+        <div className="flex-1 overflow-y-auto h-screen p-6 lg:p-10 custom-scrollbar">
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-10 z-10 custom-scrollbar space-y-12">
           
@@ -347,7 +373,7 @@ const [tempClassID, setTempClassID] = useState(null);
                           className="flex-1 bg-indigo-600 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 transition-all disabled:opacity-50"
                         >
                           {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />} 
-                          {isProcessing ? "LAUNCHING..." : `LAUNCH ${activeType.toUpperCase()}`}
+                          {isProcessing ? "LAUNCHING..." : `LAUNCH ${activeType?.toUpperCase()}`}
                         </button>
                       </div>
                       {error && <p className="text-rose-500 text-xs font-bold text-center">{error}</p>}
@@ -419,8 +445,11 @@ const [tempClassID, setTempClassID] = useState(null);
           </section>
 
         </div>
+        </div>
+      </div>
+      )}
       </main>
-      <ClassLaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onNext={handleSaveClass} />
+      <ClassLaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onNext={handleSaveClass} currentTeacherName={currentUser?.displayName || "Sensei"} />
     </div>
   );
 }
@@ -511,20 +540,35 @@ function TaskItem({ title, date, level, status, isDarkMode }) {
 }
 
 
-const ClassLaunchModal = ({ isOpen, onClose, onNext }) => {
+const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName }) => {
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
-    teacherName: "Sensei Tanaka", // Default
+    teacherName: currentTeacherName, // Default
     classTitle: "",
     level: "N5",
     status: "Starting Now",
     scheduledTime: "",
   });
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (currentTeacherName) {
+      setFormData(prev => ({ ...prev, teacherName: currentTeacherName }));
+    }
+  }, [currentTeacherName]);
+  
 
-  const handleSubmit = (e) => {
+  
+  useEffect(() => {
+  // If the modal is closed, reset the loading state for the next time it opens
+  if (!isOpen) {
+    setIsSaving(false);
+  }
+}, [isOpen]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     console.log("submitted");
+    setIsSaving(true);
     
     // Autogenerate a 6-digit Room ID
     const autoRoomID = Math.floor(100000 + Math.random() * 900000).toString();
@@ -536,9 +580,16 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext }) => {
       createdAt: new Date(),
     };
 
-    // Send this data to the next step (The Password Page)
-    onNext(finalClassData);
+    try {
+    // 2. Wait for the parent (handleSaveClass) to finish
+    await onNext(finalClassData);
+  } catch (error) {
+    console.error("Submission failed:", error);
+    setIsSaving(false); // 3. Reset if it fails so teacher can try again
+  }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -580,6 +631,11 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext }) => {
               <option>JLPT N3</option>
               <option>JLPT N2</option>
               <option>JLPT N1</option>
+              <option>JLPT N5 Pro</option>
+              <option>JLPT N4 Pro</option>
+              <option>JLPT N3 Pro</option>
+              <option>JLPT N2 Pro</option>
+              <option>JLPT N1 Pro</option>
             </select>
           </div>
 
@@ -611,9 +667,21 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext }) => {
 
           <div className="pt-4 flex gap-3">
             <button type="button" onClick={onClose} className="flex-1 py-4 text-slate-400 font-bold hover:text-white transition-colors">Cancel</button>
-            <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-500 shadow-xl shadow-indigo-600/20">
-              Continue to Password
-            </button>
+            <button 
+  type="submit" 
+  disabled={isSaving} // Prevent double clicks
+  className={`flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3
+    ${isSaving ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 active:scale-95'}`}
+>
+  {isSaving ? (
+    <>
+      <Loader2 className="animate-spin" size={20} />
+      SECURING SESSION...
+    </>
+  ) : (
+    "Continue to Password"
+  )}
+</button>
           </div>
         </form>
       </div>

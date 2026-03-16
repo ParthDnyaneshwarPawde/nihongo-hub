@@ -106,6 +106,62 @@ if (userRole === 'teacher' || isGuestTeacher) {
   whiteboardConfig: {            
      showAddImageButton: true, // Sensei can upload Kanji worksheets to draw on
   },
+  onJoinRoom: async () => {
+  if (role === 'student') {
+    // Increment the count in Firestore
+    const classRef = doc(db, "classes", classDocId); 
+    await updateDoc(classRef, {
+      activeParticipants: increment(1) // You need to import { increment } from 'firebase/firestore'
+    })
+  } else if(role === 'host' || role === 'co-host' || role === 'admin' || role === 'moderator' || role === 'guest') {
+    // Decrement the count in Firestore
+    const classRef = doc(db, "classes", classDocId); 
+    await updateDoc(classRef, {
+      activePowerParticipants: increment(1) // You need to import { increment } from 'firebase/firestore'
+    })
+  }
+},
+  onLeaveRoom: async () => {
+    if (role === 'student') {
+    // Increment the count in Firestore
+    const classRef = doc(db, "classes", classDocId); 
+    await updateDoc(classRef, {
+      activeParticipants: increment(-1) // You need to import { increment } from 'firebase/firestore'
+    })
+  } else if(role === 'host' || role === 'co-host' || role === 'admin' || role === 'moderator' || role === 'guest') {
+    // Decrement the count in Firestore
+    const classRef = doc(db, "classes", classDocId); 
+    await updateDoc(classRef, {
+      activePowerParticipants: increment(-1) // You need to import { increment } from 'firebase/firestore'
+    })
+  }
+    // 1. Only the HOST should end the class in the database
+    if (role === 'host') {
+      try {
+        // We need the class ID. If you don't have it in the URL, 
+        // we can find it by the roomID in Firestore.
+        const q = query(
+          collection(db, "classes"), 
+          where("roomID", "==", roomID), 
+          where("status", "==", "live")
+        );
+        
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const classDoc = querySnapshot.docs[0];
+          await updateDoc(doc(db, "classes", classDoc.id), {
+            status: 'ended',
+            endedAt: serverTimestamp()
+          });
+        }
+      } catch (error) {
+        console.error("Auto-end failed:", error);
+      }
+    }
+    
+    // 2. Take them back to their dashboard regardless of role
+    navigate(role === 'host' ? '/teacher-dashboard' : '/student-dashboard');
+  },
 
   // --- PRIVACY & SECURITY ---
   showRemoveUserButton: userRole === 'teacher' || userRole === 'co-host' || userRole === 'admin' || userRole === 'moderator',

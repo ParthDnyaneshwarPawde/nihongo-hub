@@ -5,8 +5,11 @@ import StudentDashboard from './pages/StudentDashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import Room from "./pages/Room"; 
+import LiveClassrooms from './pages/LiveClassrooms';
+import React, { useState } from 'react';
 
 function App() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
   return (
     <Router>
       <Routes>
@@ -33,7 +36,12 @@ function App() {
             <TeacherDashboard />
           </ProtectedRoute>
         } />
-        // Simplified logic for App.jsx
+        <Route path="/live-classrooms" element={
+          <ProtectedRoute requiredRole="teacher">
+            <LiveClassrooms isDarkMode={isDarkMode} />
+          </ProtectedRoute>
+        } />
+        
 <Route path="/room/:roomID" element={
   // If the URL has 'role=guest', we bypass the strict login check
   window.location.search.includes('role=guest') 

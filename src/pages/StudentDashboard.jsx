@@ -22,6 +22,14 @@ export default function StudentDashboard() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [enteredPassword, setEnteredPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+
+useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged((user) => {
+    setCurrentUser(user);
+  });
+  return () => unsubscribe();
+}, []);
 
   
 
