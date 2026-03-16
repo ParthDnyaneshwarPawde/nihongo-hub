@@ -25,6 +25,7 @@ export default function StudentDashboard() {
   const [currentUser, setCurrentUser] = useState(null);
 
   const [latestBulletin, setLatestBulletin] = useState(null);
+  const [bulletins, setBulletins] = useState([]); // <--- Add this
 
 useEffect(() => {
   const q = query(
@@ -33,7 +34,9 @@ useEffect(() => {
     limit(3)
   );
 
-  
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    setBulletins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  });
 
   return () => unsubscribe();
 }, []);
