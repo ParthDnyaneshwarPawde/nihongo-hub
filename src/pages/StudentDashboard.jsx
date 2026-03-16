@@ -30,14 +30,10 @@ useEffect(() => {
   const q = query(
     collection(db, "bulletins"), 
     orderBy("createdAt", "desc"), 
-    limit(1)
+    limit(3)
   );
 
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    if (!snapshot.empty) {
-      setLatestBulletin(snapshot.docs[0].data());
-    }
-  });
+  
 
   return () => unsubscribe();
 }, []);
@@ -314,6 +310,55 @@ useEffect(() => {
     ) : (
       <div className={`col-span-full p-12 text-center rounded-[32px] border-2 border-dashed ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-400'}`}>
         No classes scheduled for today. Check back later!
+      </div>
+    )}
+  </div>
+</section>
+
+{/* ================= GLOBAL BULLETIN CENTER ================= */}
+<section className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
+  <div className="flex justify-between items-end mb-8">
+    <div>
+      <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-2">Campus News</h3>
+      <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Official Bulletins</h2>
+    </div>
+    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
+      <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
+      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Real-time Updates</span>
+    </div>
+  </div>
+
+  <div className={`p-2 rounded-[40px] border ${isDarkMode ? 'bg-[#0B1120] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+    {bulletins.length > 0 ? (
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+        {bulletins.map((msg, index) => (
+          <div key={msg.id} className={`p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 ${index === 0 ? 'rounded-t-[38px]' : ''} ${index === bulletins.length - 1 ? 'rounded-b-[38px]' : ''}`}>
+            <div className="flex items-start gap-6">
+              <div className={`p-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                <Bell size={24} />
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <h4 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{msg.message}</h4>
+                  {index === 0 && (
+                    <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-md uppercase tracking-tighter">New</span>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Posted by {msg.sender || "Sensei"} • {msg.createdAt?.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}
+                </p>
+              </div>
+            </div>
+            <button className={`px-6 py-3 rounded-xl font-black text-xs transition-all border ${isDarkMode ? 'border-slate-700 hover:bg-slate-700 text-white' : 'border-slate-200 hover:bg-white text-slate-600 shadow-sm'}`}>
+              Mark as Read
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="p-20 text-center">
+        <Info className="mx-auto text-slate-300 mb-4" size={48} />
+        <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No active announcements</p>
       </div>
     )}
   </div>

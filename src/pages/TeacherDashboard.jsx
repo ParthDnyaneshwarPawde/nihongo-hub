@@ -31,6 +31,7 @@ const [tempClassID, setTempClassID] = useState(null);
   const [activeRoomCode, setActiveRoomCode] = useState(""); // Fixed missing state
   // const [tempClassData, setTempClassData] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  
 
 useEffect(() => {
   const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -67,11 +68,23 @@ useEffect(() => {
     }
   });
 
-  const broadcastBulletin = async () => {
-  if (!bulletinMessage.trim()) return;
+  
+
+  return () => unsubscribe();
+}, []);
+
+
+// 2. The missing function (put this near your other handle functions)
+const broadcastBulletin = async () => {
+  if (!bulletinMessage.trim()) {
+    alert("Please enter a message first!");
+    return;
+  }
+  
   setIsBroadcasting(true);
 
   try {
+    // Pushes the message to a 'bulletins' collection in Firebase
     await addDoc(collection(db, "bulletins"), {
       message: bulletinMessage,
       sender: currentUser?.displayName || "Sensei",
@@ -79,17 +92,36 @@ useEffect(() => {
       type: "global"
     });
 
-    setBulletinMessage(""); // Clear the box
-    alert("Broadcast sent to all students!");
-  } catch (error) {
-    console.error("Broadcast failed:", error);
+    setBulletinMessage(""); // Clear the text area after sending
+    alert("Broadcast sent successfully!");
+  } catch (err) {
+    console.error("Broadcast error:", err);
+    alert("Failed to send broadcast.");
   } finally {
     setIsBroadcasting(false);
   }
 };
 
-  return () => unsubscribe();
-}, []);
+//   const broadcastBulletin = async () => {
+//   if (!bulletinMessage.trim()) return;
+//   setIsBroadcasting(true);
+
+//   try {
+//     await addDoc(collection(db, "bulletins"), {
+//       message: bulletinMessage,
+//       sender: currentUser?.displayName || "Sensei",
+//       createdAt: serverTimestamp(),
+//       type: "global"
+//     });
+
+//     setBulletinMessage(""); // Clear the box
+//     alert("Broadcast sent to all students!");
+//   } catch (error) {
+//     console.error("Broadcast failed:", error);
+//   } finally {
+//     setIsBroadcasting(false);
+//   }
+// };
 
   const handleLogout = async () => {
     try {
@@ -416,13 +448,14 @@ useEffect(() => {
               <h3 className={`font-black mb-2 tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Global Bulletin</h3>
               <p className="text-xs text-slate-500 mb-6 leading-relaxed font-medium">Push an announcement to every student's dashboard instantly.</p>
               <textarea 
-  value={bulletinMessage}
-  onChange={(e) => setBulletinMessage(e.target.value)}
+  value={bulletinMessage} // Link to state
+  onChange={(e) => setBulletinMessage(e.target.value)} // Update state
   placeholder="Ex: 'N4 Mock Test starts in 15 mins...'"
   className={`flex-1 bg-transparent border-2 rounded-2xl p-4 text-sm outline-none focus:border-indigo-500 transition-all resize-none mb-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}
 />
+
 <button 
-  onClick={broadcastBulletin}
+  onClick={broadcastBulletin} // CALL THE FUNCTION HERE
   disabled={isBroadcasting}
   className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 transition-all disabled:opacity-50"
 >
