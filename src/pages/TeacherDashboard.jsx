@@ -17,6 +17,8 @@ export default function TeacherDashboard() {
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tempClassData, setTempClassData] = useState(null);
+  const [bulletinMessage, setBulletinMessage] = useState("");
+const [isBroadcasting, setIsBroadcasting] = useState(false);
 
 const [step, setStep] = useState('selection');
 
@@ -64,6 +66,27 @@ useEffect(() => {
       setCurrentSessionId(null);
     }
   });
+
+  const broadcastBulletin = async () => {
+  if (!bulletinMessage.trim()) return;
+  setIsBroadcasting(true);
+
+  try {
+    await addDoc(collection(db, "bulletins"), {
+      message: bulletinMessage,
+      sender: currentUser?.displayName || "Sensei",
+      createdAt: serverTimestamp(),
+      type: "global"
+    });
+
+    setBulletinMessage(""); // Clear the box
+    alert("Broadcast sent to all students!");
+  } catch (error) {
+    console.error("Broadcast failed:", error);
+  } finally {
+    setIsBroadcasting(false);
+  }
+};
 
   return () => unsubscribe();
 }, []);
@@ -393,12 +416,18 @@ useEffect(() => {
               <h3 className={`font-black mb-2 tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Global Bulletin</h3>
               <p className="text-xs text-slate-500 mb-6 leading-relaxed font-medium">Push an announcement to every student's dashboard instantly.</p>
               <textarea 
-                placeholder="Ex: 'N4 Mock Test starts in 15 mins...'"
-                className="flex-1 bg-transparent border-2 border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-sm outline-none focus:border-indigo-500 transition-all resize-none mb-4"
-              />
-              <button className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 transition-all">
-                Broadcast Now <Send size={16}/>
-              </button>
+  value={bulletinMessage}
+  onChange={(e) => setBulletinMessage(e.target.value)}
+  placeholder="Ex: 'N4 Mock Test starts in 15 mins...'"
+  className={`flex-1 bg-transparent border-2 rounded-2xl p-4 text-sm outline-none focus:border-indigo-500 transition-all resize-none mb-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}
+/>
+<button 
+  onClick={broadcastBulletin}
+  disabled={isBroadcasting}
+  className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 transition-all disabled:opacity-50"
+>
+  {isBroadcasting ? "Sending..." : "Broadcast Now"} <Send size={16}/>
+</button>
             </div>
           </section>
 

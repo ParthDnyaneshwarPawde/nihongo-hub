@@ -24,6 +24,24 @@ export default function StudentDashboard() {
   const [passwordError, setPasswordError] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
 
+  const [latestBulletin, setLatestBulletin] = useState(null);
+
+useEffect(() => {
+  const q = query(
+    collection(db, "bulletins"), 
+    orderBy("createdAt", "desc"), 
+    limit(1)
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    if (!snapshot.empty) {
+      setLatestBulletin(snapshot.docs[0].data());
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
+
 useEffect(() => {
   const unsubscribe = auth.onAuthStateChanged((user) => {
     setCurrentUser(user);
@@ -161,6 +179,26 @@ useEffect(() => {
 
       {/* ================= 3. MAIN CONTENT ================= */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
+
+        {latestBulletin && (
+  <div className="animate-in slide-in-from-top duration-500 mb-8 p-4 bg-indigo-600 rounded-3xl flex items-center justify-between shadow-xl shadow-indigo-600/20">
+    <div className="flex items-center gap-4 px-4">
+      <div className="p-2 bg-white/20 rounded-xl text-white">
+        <Bell className="animate-bounce" size={20} />
+      </div>
+      <div>
+        <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Global Bulletin</p>
+        <p className="text-white font-bold">{latestBulletin.message}</p>
+      </div>
+    </div>
+    <button 
+      onClick={() => setLatestBulletin(null)} 
+      className="p-3 text-indigo-200 hover:text-white transition-colors"
+    >
+      <X size={20} />
+    </button>
+  </div>
+)}
         
         {/* Background Kanji Watermark (Hidden on small screens) */}
         <div className={`hidden xl:block absolute right-[-10%] top-[15%] text-[500px] font-black select-none pointer-events-none z-0 opacity-[0.03] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
