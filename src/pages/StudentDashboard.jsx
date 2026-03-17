@@ -26,11 +26,6 @@ const [currentCourses, setCurrentCourses] = useState([]);
 
 // 2. These are always available to everyone
 const [freeBatches, setFreeBatches] = useState([
-  "JLPT N5", 
-  "JLPT N4", 
-  "JLPT N3", 
-  "Kana Starter",
-  "Survival Spoken Japanese"
 ]);
 
   
@@ -64,17 +59,30 @@ useEffect(() => {
       const fetchedBatches = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDynamicBatches(fetchedBatches);
       
-      // Optional: Auto-select the first batch if the student hasn't selected one yet
-      if (fetchedBatches.length > 0 && level === 'JLPT N5') {
-        setLevel(fetchedBatches[0].title); 
+      // 🚨 1. Smart Filter: Grab ONLY the titles of courses that are natively Free (ignores paid courses with coupons)
+      const strictlyFreeTitles = fetchedBatches
+        .filter(course => course.isFree === true || course.isFree === "true" || Number(course.price || 0) === 0)
+        .map(course => course.title);
+        
+      // 🚨 2. Update the Free Dropdown dynamically!
+      setFreeBatches(strictlyFreeTitles);
+      
+      // 🚨 3. Auto-Select / Bouncer Logic
+      // If the current level (e.g. JLPT N5) is NOT in their purchased courses AND is NOT in the free list...
+      const hasPaidAccess = currentCourses.includes(level);
+      const isStillFree = strictlyFreeTitles.includes(level);
+      
+      if (level && !hasPaidAccess && !isStillFree && strictlyFreeTitles.length > 0) {
+        setLevel(strictlyFreeTitles[0]); // Kick them to the first actually free course safely
       }
     } else {
       setDynamicBatches([]);
+      setFreeBatches([]);
     }
   });
 
   return () => unsubscribe();
-}, [level]);
+}, [level, currentCourses]); // Added dependencies so it reacts when they buy a course
 
 
   // Auto-save the selected level to the browser's memory whenever it changes
@@ -435,12 +443,13 @@ useEffect(() => {
 
   {/* The Dropdown Menu */}
 {isCourseMenuOpen && (
-  <div className={`absolute top-full mt-2 left-0 w-72 rounded-2xl shadow-2xl border overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2 duration-200 
+  <div className={`absolute top-full mt-2 left-0 w-80 rounded-2xl shadow-2xl border z-[100] animate-in fade-in slide-in-from-top-2 duration-200 
     ${isDarkMode ? 'bg-slate-900 border-slate-700 shadow-black/50' : 'bg-white border-slate-200'}`}
+    style={{ maxHeight: '85vh', overflowY: 'auto' }}
   >
     
-    {/* SECTION 1: Purchased / Enrolled Batches */}
-    <div className="p-3">
+    {/* SECTION 1: My Courses (Unlimted) */}
+    <div className="p-3 pb-0">
       <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-3 mb-2">My Courses</p>
       <div className="space-y-1">
         {currentCourses.length > 0 ? (
@@ -456,18 +465,32 @@ useEffect(() => {
             </button>
           ))
         ) : (
-          <p className="px-3 py-2 text-xs font-bold text-slate-500">No premium courses yet.</p>
+          <p className="px-3 py-2 text-xs font-bold text-slate-500 italic">No premium courses yet.</p>
         )}
       </div>
     </div>
 
-    <div className={`h-px w-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}></div>
+    <div className={`h-px w-full my-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}></div>
 
-    {/* SECTION 2: Default System Free Batches */}
-    <div className="p-3">
-      <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest px-3 mb-2">Free Batches</p>
+    {/* SECTION 2: Free Batches (Limited to 6) */}
+    <div className="p-3 pt-0">
+      <div className="flex justify-between items-center px-3 mb-2 mt-2">
+        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Free Batches</p>
+        
+        {/* GREEN VIEW ALL LINK */}
+        {freeBatches.length > 6 && (
+          <button 
+            onClick={() => { setIsCourseMenuOpen(false); navigate('/course-catalog?filter=free'); }}
+            className={`text-[10px] font-black uppercase tracking-tighter px-2 py-1 rounded transition-colors
+              ${isDarkMode ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-emerald-600 hover:bg-emerald-50'}`}
+          >
+            View All →
+          </button>
+        )}
+      </div>
+
       <div className="space-y-1">
-        {freeBatches.map(batch => (
+        {freeBatches.slice(0, 6).map(batch => (
           <button
             key={batch}
             onClick={() => { setLevel(batch); setIsCourseMenuOpen(false); }}
@@ -481,16 +504,16 @@ useEffect(() => {
       </div>
     </div>
 
-    {/* Section 3: The Redirect Button */}
-    <div className={`p-4 border-t ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}>
+    {/* SECTION 3: EXPLORE CATALOG AT BOTTOM */}
+    <div className={`p-4 border-t sticky bottom-0 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
       <button 
         onClick={() => {
           setIsCourseMenuOpen(false);
           navigate('/course-catalog');
         }}
-        className="w-full py-3 bg-slate-900 dark:bg-white dark:text-slate-900 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:scale-[1.02] transition-transform shadow-lg"
+        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
       >
-        Explore Catalog
+        Explore Full Catalog
       </button>
     </div>
 

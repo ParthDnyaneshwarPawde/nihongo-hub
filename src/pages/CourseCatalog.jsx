@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft, CheckCircle2, Lock, Zap, Shield, X,
   ChevronRight, Loader2, Search, Tag, Sparkles, Moon, Sun, Globe, Users,
@@ -11,6 +11,8 @@ import { db, auth } from '../firebase';
 
 export default function CourseCatalog() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [activeFilter, setActiveFilter] = useState('ALL');
   
   // --- 1. Global & Data States ---
   const [batches, setBatches] = useState([]);
@@ -31,6 +33,26 @@ export default function CourseCatalog() {
   const [copiedId, setCopiedId] = useState(false);
 
   const orderReference = useMemo(() => `NH-${Math.floor(100000 + Math.random() * 900000)}`, [activeCourse]);
+
+  useEffect(() => {
+  const params = new URLSearchParams(location.search);
+  const filterParam = params.get('filter');
+  
+  if (filterParam === 'free') setActiveFilter('FREE');
+  if (filterParam === 'premium') setActiveFilter('PREMIUM');
+}, [location]);
+
+const filteredBatches = useMemo(() => {
+  return batches.filter(batch => {
+    const matchesSearch = batch.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTab = 
+      activeFilter === 'ALL' ? true :
+      activeFilter === 'FREE' ? batch.isFree === true :
+      activeFilter === 'PREMIUM' ? batch.isFree === false : true;
+      
+    return matchesSearch && matchesTab;
+  });
+}, [batches, searchQuery, activeFilter]);
 
   // --- 4. Initialization & Firebase Sync ---
   useEffect(() => {
@@ -222,15 +244,29 @@ export default function CourseCatalog() {
               </button>
             )}
           </div>
+          {/* --- FILTER TABS --- */}
+<div className="flex justify-center items-center gap-2 mb-12">
+  {['ALL', 'PREMIUM', 'FREE'].map((tab) => (
+    <button
+      key={tab}
+      onClick={() => setActiveFilter(tab)}
+      className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border
+        ${activeFilter === tab 
+          ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/20 scale-105' 
+          : `${theme.card} ${theme.border} ${theme.textMuted} hover:border-indigo-500/50`
+        }`}
+    >
+      {tab === 'PREMIUM' ? '💎 Premium' : tab === 'FREE' ? '🍃 Free Batches' : 'All Curriculums'}
+    </button>
+  ))}
+</div>
         </header>
 
         {/* Catalog Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          {batches.filter(b => b.title.toLowerCase().includes(searchQuery.toLowerCase())).map((batch, idx) => {
-            // 🚨 ENROLLMENT CHECK FOR GRID CARDS
-            const isEnrolled = userEnrollments.includes(batch.title);
-
-            return (
+          {filteredBatches.map((batch, idx) => {
+    const isEnrolled = userEnrollments.includes(batch.title);
+    return (
               <div 
                 key={batch.id} 
                 onClick={() => { setActiveCourse(batch); setActiveView('DETAIL'); }} 
