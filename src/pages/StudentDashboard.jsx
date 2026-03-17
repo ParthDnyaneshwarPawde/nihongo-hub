@@ -6,13 +6,34 @@ import {
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase'; // Adjust path if your firebase file is elsewhere
-import { collection, query, where, onSnapshot, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 
 export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState('learn');
-  const [level, setLevel] = useState('N4');
+  // REPLACE your old level state with this:
+  const [level, setLevel] = useState('JLPT N5'); // Safe default
+  // 1. Toggle state for the custom menu
+  const [isCourseMenuOpen, setIsCourseMenuOpen] = useState(false);
+
+  // 2. Your current default courses
+  // const currentCourses = ["JLPT N5", "JLPT N4", "JLPT N3"];
+
+  // 3. The 5 Free Batches
+// 1. These are fetched from Firestore (The ones they paid for)
+const [currentCourses, setCurrentCourses] = useState([]); 
+
+// 2. These are always available to everyone
+const [freeBatches, setFreeBatches] = useState([
+  "JLPT N5", 
+  "JLPT N4", 
+  "JLPT N3", 
+  "Kana Starter",
+  "Survival Spoken Japanese"
+]);
+
+  
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeSession, setActiveSession] = useState(null); // To store the live class info
@@ -26,20 +47,149 @@ export default function StudentDashboard() {
 
   const [latestBulletin, setLatestBulletin] = useState(null);
   const [bulletins, setBulletins] = useState([]); // <--- Add this
+  const [viewingBulletin, setViewingBulletin] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
+  // 1. New state to hold the real batches from Firestore
+const [dynamicBatches, setDynamicBatches] = useState([]);
+
+// 2. Fetch the batches dynamically
 useEffect(() => {
-  const q = query(
-    collection(db, "bulletins"), 
-    orderBy("createdAt", "desc"), 
-    limit(3)
-  );
-
+  // Fetch all available batches from the database
+  const q = query(collection(db, 'batches')); 
+  
   const unsubscribe = onSnapshot(q, (snapshot) => {
-    setBulletins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    if (!snapshot.empty) {
+      const fetchedBatches = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setDynamicBatches(fetchedBatches);
+      
+      // Optional: Auto-select the first batch if the student hasn't selected one yet
+      if (fetchedBatches.length > 0 && level === 'JLPT N5') {
+        setLevel(fetchedBatches[0].title); 
+      }
+    } else {
+      setDynamicBatches([]);
+    }
   });
 
   return () => unsubscribe();
-}, []);
+}, [level]);
+
+
+  // Auto-save the selected level to the browser's memory whenever it changes
+useEffect(() => {
+  const syncLevelToCloud = async () => {
+    // Only save if there is a logged-in user and a level selected
+    if (currentUser?.uid && level) {
+      try {
+        const userRef = doc(db, "users", currentUser.uid);
+        await updateDoc(userRef, {
+          lastSelectedLevel: level // This bookmarks the course in the cloud
+        });
+      } catch (err) {
+        console.error("Cloud Sync Error:", err);
+      }
+    }
+  };
+
+  syncLevelToCloud();
+}, [level, currentUser]);
+useEffect(() => {
+    const checkAuthorization = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const userRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const role = userData.role?.toLowerCase();
+
+        // 🚨 THE REDIRECT: If they are a teacher/admin, get them out of here!
+        if (role === 'teacher' || role === 'admin') {
+          console.log("Teacher detected on Student Dash. Redirecting...");
+          navigate('/teacher-dashboard', { replace: true });
+        }
+      }
+    };
+
+    checkAuthorization();
+  }, [navigate]);
+//   useEffect(() => {
+//   const q = query(
+//     collection(db, "bulletins"), 
+//     orderBy("createdAt", "desc") 
+//     // limit(3) REMOVED so we get everything
+//   );
+
+//   const unsubscribe = onSnapshot(q, (snapshot) => {
+//     setBulletins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+//   });
+
+//   return () => unsubscribe();
+// }, []);
+
+// 
+
+const formatSessionDateTime = (isoString) => {
+  if (!isoString) return { date: 'TBD', time: 'TBD' };
+
+  const dateObj = new Date(isoString);
+
+  // Format Date: e.g., "Oct 24, 2026"
+  const date = dateObj.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
+  // Format Time: e.g., "10:00 PM"
+  const time = dateObj.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  return { date, time };
+};
+
+
+useEffect(() => {
+  if (!level) return;
+
+  console.log("====================================");
+  console.log("🔍 1. STUDENT DROPDOWN SAYS =>", `"${level}"`);
+
+  // --- DIAGNOSTIC: Check what is actually inside Firebase right now ---
+  const checkDB = query(collection(db, "bulletins"), limit(5));
+  onSnapshot(checkDB, (snap) => {
+    console.log("🔍 2. WHAT IS ACTUALLY IN FIREBASE (Last 5 messages):");
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      console.log(`   📝 Message: "${data.message.substring(0, 20)}..." | Target Saved As: "${data.targetLevel}"`);
+    });
+    console.log("====================================");
+  });
+  // -----------------------------------------------------------------
+
+  // --- THE REAL FILTER ---
+  const q = query(
+    collection(db, "bulletins"),
+    where("targetLevel", "in", [level, "global"]),
+    orderBy("createdAt", "desc") // <-- Keep this commented out or deleted for the test!
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log(`✅ 3. MATCHES FOUND: Firebase gave us ${snapshot.size} messages that matched "${level}" or "global"`);
+    setBulletins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  }, (err) => {
+    console.error("❌ FIREBASE ERROR:", err.message);
+  });
+
+  return () => unsubscribe();
+}, [level]);
 
 useEffect(() => {
   const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -47,6 +197,32 @@ useEffect(() => {
   });
   return () => unsubscribe();
 }, []);
+
+useEffect(() => {
+  if (!currentUser?.uid) return;
+
+  const userRef = doc(db, "users", currentUser.uid);
+  
+  const unsubscribe = onSnapshot(userRef, (docSnap) => {
+    if (docSnap.exists()) {
+      const userData = docSnap.data();
+      
+      // 1. Sync their courses
+      if (userData.enrolledCourses && Array.isArray(userData.enrolledCourses)) {
+        setCurrentCourses(userData.enrolledCourses);
+      } else {
+        setCurrentCourses([]);
+      }
+
+      // 2. 🚨 THE FIX: Sync their last selected level from THEIR cloud record
+      if (userData.lastSelectedLevel) {
+        setLevel(userData.lastSelectedLevel);
+      }
+    }
+  });
+
+  return () => unsubscribe();
+}, [currentUser]);
 
   
 
@@ -68,6 +244,14 @@ useEffect(() => {
 
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
+
+    // 1. Safety check: is the class still live?
+  if (selectedClass.status !== 'live') {
+    setPasswordError("This session has ended or is not yet active.");
+    return;
+  }
+
+  const correctPassword = selectedClass.password || "";
     
     // Check if the password matches the one stored in Firestore for this specific class
     if (!selectedClass.password || enteredPassword === selectedClass.password) {
@@ -83,21 +267,28 @@ useEffect(() => {
   };
 
   useEffect(() => {
+  // 1. Exit early if level is null/undefined so we don't crash
+  if (!level) return; 
+
   const q = query(
-  collection(db, "classes"), 
-  where("status", "in", ["upcoming", "live"]) // Fetches both types
-);
+    collection(db, "classes"), 
+    where("status", "in", ["upcoming", "live"]), 
+    where("level", "==", level) 
+  );
   
   const unsubscribe = onSnapshot(q, (snapshot) => {
     setUpcomingClasses(snapshot.docs.map(doc => ({ 
       id: doc.id, 
       ...doc.data() 
     })));
+  }, (err) => {
+    console.error("Filter Error:", err.message);
   });
   
   return () => unsubscribe();
-}, []);
 
+  // 2. THIS ARRAY MUST ALWAYS HAVE 'level' IN IT
+}, [level]);
   // Close sidebar on mobile when switching tabs
   const handleTabClick = (tab) => {
     setActiveTab(tab);
@@ -105,6 +296,8 @@ useEffect(() => {
   };
   const handleLogout = async () => {
   try {
+    setCurrentCourses([]);
+    setLevel('JLPT N5')
     await signOut(auth);
     navigate('/'); // This sends them back to the login gatekeeper
   } catch (error) {
@@ -221,18 +414,89 @@ useEffect(() => {
             <button className="lg:hidden p-2 text-slate-500" onClick={() => setIsSidebarOpen(true)}>
               <Menu size={24} />
             </button>
-            <div className="hidden sm:flex items-center gap-4 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700">
-              <Filter size={16} className="text-slate-400" />
-              <select 
-                value={level} 
-                onChange={(e) => setLevel(e.target.value)}
-                className={`bg-transparent font-bold text-sm outline-none cursor-pointer ${isDarkMode ? 'text-white' : 'text-white'}`}
-              >
-                <option className="text-slate-900">JLPT N5</option>
-                <option className="text-slate-900">JLPT N4</option>
-                <option className="text-slate-900">JLPT N3</option>
-              </select>
-            </div>
+            {/* --- CUSTOM COURSE DROPDOWN --- */}
+<div className="relative hidden sm:block">
+  
+  {/* The Trigger Button */}
+  <button 
+    onClick={() => setIsCourseMenuOpen(!isCourseMenuOpen)}
+    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all duration-300 shadow-sm
+      ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500' : 'bg-white border-slate-200 hover:border-indigo-400'}`}
+  >
+    <BookOpen size={16} className="text-indigo-500" />
+    <span className={`font-black text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{level}</span>
+    <ChevronRight size={14} className={`text-slate-400 transition-transform duration-300 ${isCourseMenuOpen ? 'rotate-90' : 'rotate-0'}`} />
+  </button>
+
+  {/* Invisible Overlay to close when clicking outside */}
+  {isCourseMenuOpen && (
+    <div className="fixed inset-0 z-[90]" onClick={() => setIsCourseMenuOpen(false)}></div>
+  )}
+
+  {/* The Dropdown Menu */}
+{isCourseMenuOpen && (
+  <div className={`absolute top-full mt-2 left-0 w-72 rounded-2xl shadow-2xl border overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2 duration-200 
+    ${isDarkMode ? 'bg-slate-900 border-slate-700 shadow-black/50' : 'bg-white border-slate-200'}`}
+  >
+    
+    {/* SECTION 1: Purchased / Enrolled Batches */}
+    <div className="p-3">
+      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-3 mb-2">My Courses</p>
+      <div className="space-y-1">
+        {currentCourses.length > 0 ? (
+          currentCourses.map(course => (
+            <button
+              key={course}
+              onClick={() => { setLevel(course); setIsCourseMenuOpen(false); }}
+              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-between
+                ${level === course ? 'bg-indigo-500/10 text-indigo-500' : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-50'}`}
+            >
+              <span className="truncate pr-2">{course}</span>
+              {level === course && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></div>}
+            </button>
+          ))
+        ) : (
+          <p className="px-3 py-2 text-xs font-bold text-slate-500">No premium courses yet.</p>
+        )}
+      </div>
+    </div>
+
+    <div className={`h-px w-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}></div>
+
+    {/* SECTION 2: Default System Free Batches */}
+    <div className="p-3">
+      <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest px-3 mb-2">Free Batches</p>
+      <div className="space-y-1">
+        {freeBatches.map(batch => (
+          <button
+            key={batch}
+            onClick={() => { setLevel(batch); setIsCourseMenuOpen(false); }}
+            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-between
+              ${level === batch ? 'bg-emerald-500/10 text-emerald-500' : isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'}`}
+          >
+            <span className="truncate pr-2">{batch}</span>
+            {level === batch && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></div>}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* Section 3: The Redirect Button */}
+    <div className={`p-4 border-t ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}>
+      <button 
+        onClick={() => {
+          setIsCourseMenuOpen(false);
+          navigate('/course-catalog');
+        }}
+        className="w-full py-3 bg-slate-900 dark:bg-white dark:text-slate-900 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:scale-[1.02] transition-transform shadow-lg"
+      >
+        Explore Catalog
+      </button>
+    </div>
+
+  </div>
+)}
+</div>
             <div className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-rose-500/10 rounded-full border border-rose-500/20">
               <Clock size={14} className="text-rose-500" />
               <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest truncate">114 Days to JLPT</span>
@@ -244,13 +508,21 @@ useEffect(() => {
               {isDarkMode ? <Zap size={18} className="text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]" /> : <Clock size={18} className="text-slate-600" />}
             </button>
             <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Parth S.</p>
-                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Premium Member</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-800 shadow-lg flex items-center justify-center font-bold text-white transition-transform hover:scale-105 cursor-pointer">PS</div>
-            </div>
+            <button 
+  onClick={() => setIsProfileModalOpen(true)} // 👈 TRIGGER ADDED HERE
+  className="flex items-center gap-3 group text-left outline-none"
+>
+  <div className="text-right hidden sm:block">
+    <p className={`text-sm font-black transition-colors ${isDarkMode ? 'text-white group-hover:text-indigo-400' : 'text-slate-900 group-hover:text-indigo-600'}`}>
+      {currentUser?.displayName || "Samurai Learner"}
+    </p>
+    <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Premium Member</p>
+  </div>
+  
+  <div className="w-10 h-10 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-800 shadow-lg flex items-center justify-center font-bold text-white transition-all group-hover:scale-110 group-active:scale-95">
+    {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : 'S'}
+  </div>
+</button>
           </div>
         </header>
 
@@ -296,13 +568,17 @@ useEffect(() => {
        <EventCard 
   key={cls.id}
   type={cls.type} 
-  title={cls.title} 
+  title={cls.title || cls.topic || cls.classTitle || "🚨 TITLE MISSING"} 
   sensei={cls.teacher || cls.teacherName || "Sensei Tanaka"} 
-  time={cls.status === 'live' ? "LIVE NOW" : cls.scheduledTime} 
+  rawTime={cls.status === 'live' ? "LIVE NOW" : cls.scheduledTime} 
   isDark={isDarkMode}
   // --- ADD THE PULSE CLASS IF LIVE ---
   isLive={cls.status === 'live'} 
   onClick={() => {
+    if (cls.status !== 'live') {
+      alert("This class hasn't started yet. Please check back at the scheduled time!");
+      return;
+    }
     setSelectedClass(cls);
     setIsPasswordModalOpen(true);
     setEnteredPassword("");
@@ -321,49 +597,61 @@ useEffect(() => {
 {/* ================= GLOBAL BULLETIN CENTER ================= */}
 <section className="animate-in fade-in slide-in-from-bottom-6 duration-1000">
   <div className="flex justify-between items-end mb-8">
-    <div>
-      <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-2">Campus News</h3>
-      <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Official Bulletins</h2>
-    </div>
-    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
-      <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
-      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Real-time Updates</span>
-    </div>
+  <div>
+    <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-2">Campus News</h3>
+    <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Official Bulletins</h2>
   </div>
+  
+  {/* THIS IS YOUR VIEW ALL BUTTON */}
+  <button 
+      onClick={() => setIsHistoryModalOpen(true)} // Opens the big list
+      className="text-sm font-black text-indigo-600 flex items-center gap-1 hover:gap-2 transition-all"
+    >
+      View History <ChevronRight size={18}/>
+    </button>
+</div>
 
   <div className={`p-2 rounded-[40px] border ${isDarkMode ? 'bg-[#0B1120] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
     {bulletins.length > 0 ? (
-      <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {bulletins.map((msg, index) => (
-          <div key={msg.id} className={`p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 ${index === 0 ? 'rounded-t-[38px]' : ''} ${index === bulletins.length - 1 ? 'rounded-b-[38px]' : ''}`}>
-            <div className="flex items-start gap-6">
-              <div className={`p-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                <Bell size={24} />
-              </div>
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h4 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{msg.message}</h4>
-                  {index === 0 && (
-                    <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-md uppercase tracking-tighter">New</span>
-                  )}
-                </div>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Posted by {msg.sender || "Sensei"} • {msg.createdAt?.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}
-                </p>
-              </div>
-            </div>
-            <button className={`px-6 py-3 rounded-xl font-black text-xs transition-all border ${isDarkMode ? 'border-slate-700 hover:bg-slate-700 text-white' : 'border-slate-200 hover:bg-white text-slate-600 shadow-sm'}`}>
-              Mark as Read
-            </button>
+  <div className={`divide-y divide-slate-100 dark:divide-slate-800 border rounded-[40px] overflow-hidden ${isDarkMode ? 'bg-[#0B1120] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+    {/* .slice(0, 3) ensures the dashboard stays clean */}
+    {bulletins.slice(0, 3).map((msg, index) => (
+      <div 
+        key={msg.id} 
+        onClick={() => setViewingBulletin(msg)}
+        className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      >
+        <div className="flex items-start gap-6">
+          <div className={`p-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+            <Bell size={24} />
           </div>
-        ))}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1">
+              <h4 className={`text-lg font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {msg.message}
+              </h4>
+              {index === 0 && (
+                <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-md uppercase tracking-tighter shrink-0">New</span>
+              )}
+            </div>
+            <p className="text-sm text-slate-500 line-clamp-1 font-medium mb-2">
+              {msg.message}
+            </p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {msg.sender || "Sensei"} • {msg.createdAt?.toDate().toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+        <ChevronRight size={20} className="text-slate-300 hidden md:block" />
       </div>
-    ) : (
-      <div className="p-20 text-center">
-        <Info className="mx-auto text-slate-300 mb-4" size={48} />
-        <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No active announcements</p>
-      </div>
-    )}
+    ))}
+  </div>
+) : (
+  <div className="p-20 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[40px]">
+    <Info className="mx-auto text-slate-300 mb-4" size={48} />
+    <p className="text-slate-400 font-black uppercase tracking-widest text-sm">No active announcements</p>
+  </div>
+)}
   </div>
 </section>
 
@@ -489,9 +777,9 @@ useEffect(() => {
       </div>
 
       <form onSubmit={handlePasswordSubmit} className="space-y-6">
-        <div className="space-y-3">
-          <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-2">Access Password</label>
-          <input 
+  <div className="space-y-3">
+    <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-2">Access Password</label>
+    <input 
             autoFocus
             type="password"
             placeholder="••••••"
@@ -505,22 +793,194 @@ useEffect(() => {
                 ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10' 
                 : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500 shadow-inner'}`}
           />
-          {passwordError && (
-            <div className="flex items-center justify-center gap-2 text-rose-500 animate-pulse">
-              <Info size={12} />
-              <p className="text-[10px] font-black uppercase tracking-tighter">{passwordError}</p>
-            </div>
-          )}
-        </div>
+    
+    {/* FORGOT PASSWORD HINT */}
+    <div className="flex justify-between items-center px-2">
+      <button 
+        type="button"
+        onClick={() => {
+          setIsPasswordModalOpen(false);
+          setIsHistoryModalOpen(true); // Direct them to bulletins
+        }}
+        className="text-[10px] font-black text-slate-500 hover:text-indigo-500 transition-colors uppercase tracking-tighter"
+      >
+        Forgot Key? Check Bulletins
+      </button>
+      
+      {passwordError && (
+        <p className="text-[10px] font-black text-rose-500 uppercase tracking-tighter animate-pulse">
+          Incorrect Key
+        </p>
+      )}
+    </div>
+  </div>
 
-        <button 
+  <button 
           type="submit"
           className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-3"
         >
           <ShieldCheck size={20} />
           UNLOCK CLASSROOM
         </button>
-      </form>
+</form>
+    </div>
+  </div>
+)}
+
+{/* ================= BULLETIN DETAIL MODAL ================= */}
+{viewingBulletin && (
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className={`w-full max-w-2xl rounded-[2.5rem] border shadow-2xl animate-in zoom-in duration-300 transition-colors flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-[#0F172A] border-white/10' : 'bg-white border-slate-200'}`}>
+      
+      {/* Modal Header */}
+      <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20">
+            <Bell size={20} />
+          </div>
+          <div>
+            <h3 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Bulletin Details</h3>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Official Announcement</p>
+          </div>
+        </div>
+        <button onClick={() => setViewingBulletin(null)} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
+          <X size={24} />
+        </button>
+      </div>
+
+      {/* SCROLLABLE MESSAGE AREA */}
+      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div className={`text-lg leading-relaxed font-medium whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+          {viewingBulletin.message}
+        </div>
+      </div>
+
+      {/* Modal Footer */}
+      <div className="p-8 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Broadcasted by</span>
+          <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{viewingBulletin.sender}</span>
+        </div>
+        <button 
+          onClick={() => setViewingBulletin(null)}
+          className="px-8 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-500 transition-all shadow-lg"
+        >
+          Got it
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* ================= FULL HISTORY MODAL ================= */}
+{isHistoryModalOpen && (
+  <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+    <div className={`w-full max-w-3xl rounded-[2.5rem] border shadow-2xl animate-in zoom-in duration-300 transition-colors flex flex-col max-h-[85vh] ${isDarkMode ? 'bg-[#0F172A] border-white/10' : 'bg-white border-slate-200'}`}>
+      
+      {/* Modal Header */}
+      <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <div>
+          <h3 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Announcement History</h3>
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">All messages from Sensei</p>
+        </div>
+        <button onClick={() => setIsHistoryModalOpen(false)} className="p-2 text-slate-400 hover:text-rose-500 transition-colors">
+          <X size={28} />
+        </button>
+      </div>
+
+      {/* SCROLLABLE LIST AREA */}
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <div className="space-y-2">
+          {bulletins.map((msg) => (
+            <div 
+              key={msg.id}
+              onClick={() => {
+                setViewingBulletin(msg); // Open the specific message
+                // Optional: keep history open in background or close it
+              }}
+              className={`p-6 rounded-3xl border flex items-center justify-between group cursor-pointer transition-all ${isDarkMode ? 'bg-slate-900/50 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 hover:bg-white hover:shadow-md'}`}
+            >
+              <div className="flex items-center gap-5">
+                <div className="p-3 bg-indigo-600/10 text-indigo-500 rounded-xl"><Bell size={18} /></div>
+                <div>
+                  <h4 className={`font-black text-base line-clamp-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{msg.message}</h4>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{msg.sender} • {msg.createdAt?.toDate().toLocaleDateString()}</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* Footer */}
+      <div className="p-6 text-center border-t border-slate-100 dark:border-slate-800">
+         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">End of history</p>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* ================= PROFILE SETTINGS & LOGOUT MODAL ================= */}
+{isProfileModalOpen && (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    {/* Click outside to close */}
+    <div className="absolute inset-0" onClick={() => setIsProfileModalOpen(false)} />
+    
+    <div className={`relative w-full max-w-sm rounded-[2.5rem] border shadow-2xl animate-in zoom-in duration-300 overflow-hidden ${isDarkMode ? 'bg-[#0F172A] border-white/10' : 'bg-white border-slate-200'}`}>
+      
+      {/* Modal Header/Profile Bio */}
+      <div className={`p-8 text-center border-b ${isDarkMode ? 'border-white/5 bg-white/5' : 'border-slate-100 bg-slate-50'}`}>
+        <div className="w-20 h-20 rounded-3xl bg-indigo-600 mx-auto mb-4 flex items-center justify-center text-3xl font-black text-white shadow-xl shadow-indigo-600/20">
+          {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : 'S'}
+        </div>
+        <h3 className={`text-xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {currentUser?.displayName || "Samurai Learner"}
+        </h3>
+        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-1">Verified Member</p>
+      </div>
+
+      {/* Action Links */}
+      <div className="p-4 space-y-2">
+        <button 
+          onClick={() => { navigate('/profile-settings'); setIsProfileModalOpen(false); }}
+          className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all font-black text-sm ${isDarkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}
+        >
+          <div className="flex items-center gap-3">
+            <Settings size={18} className="text-slate-400" />
+            <span>Profile Settings</span>
+          </div>
+          <ChevronRight size={16} className="text-slate-600" />
+        </button>
+
+        <button 
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all font-black text-sm ${isDarkMode ? 'hover:bg-white/5 text-slate-300' : 'hover:bg-slate-50 text-slate-700'}`}
+        >
+          <div className="flex items-center gap-3">
+            {isDarkMode ? <Zap size={18} className="text-amber-400" /> : <Clock size={18} className="text-slate-600" />}
+            <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+          </div>
+        </button>
+
+        <div className={`h-px w-full my-2 ${isDarkMode ? 'bg-white/5' : 'bg-slate-100'}`} />
+
+        <button 
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all font-black text-sm"
+        >
+          <LogOut size={18} />
+          <span>Logout Session</span>
+        </button>
+      </div>
+
+      {/* Close Button */}
+      <button 
+        onClick={() => setIsProfileModalOpen(false)}
+        className={`w-full py-4 text-[10px] font-black uppercase tracking-[0.3em] transition-colors ${isDarkMode ? 'bg-white/5 text-slate-500 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-900'}`}
+      >
+        Close Menu
+      </button>
     </div>
   </div>
 )}
@@ -530,73 +990,113 @@ useEffect(() => {
 
 /* ================= COMPONENT ABSTRACTIONS ================= */
 
-function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode }) {
-  const activeClass = "bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 ring-1 ring-white/10";
-  const inactiveClass = isDarkMode 
-    ? "text-slate-500 hover:bg-slate-800 hover:text-white" 
-    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900";
-  const dangerClass = "text-slate-500 hover:bg-rose-500/10 hover:text-rose-500";
-
-  return (
-    <button 
-      onClick={onClick}
-      className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl transition-all duration-300 font-black group ${
-        active ? activeClass : danger ? dangerClass : inactiveClass
-      }`}
-    >
-      <div className="flex items-center gap-4">
-        <span className={`${active ? 'text-white' : 'text-slate-400 group-hover:text-inherit'} transition-transform group-hover:scale-110`}>{icon}</span>
-        <span className="text-[13px] tracking-tight">{label}</span>
-      </div>
-      {badge && <span className="text-[8px] font-black bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-1 rounded-full uppercase">{badge}</span>}
-    </button>
-  );
-}
-
-function EventCard({ type, title, sensei, time, isDark, isLive, onClick }) { 
-  // Map the icons to match the 'type' string from your DB
-  const icons = { 
-    Video: <Video size={20}/>, 
-    Audio: <Mic2 size={20}/>, 
-    Broadcast: <Tv size={20}/> 
+function EventCard({ type, title, subtitle, sensei, rawTime, isDark, isLive, onClick }) {
+  const icons = {
+    Video: <Video size={22} className={isLive ? "text-white" : "text-indigo-500"} />,
+    Audio: <Mic2 size={22} className={isLive ? "text-white" : "text-rose-500"} />,
+    Broadcast: <Tv size={22} className={isLive ? "text-white" : "text-emerald-500"} />
   };
-  
+
+  const formatDateTime = (rawDate) => {
+    if (!rawDate) return { day: '00', month: '---', time: '--:--' };
+    let dateObj;
+    if (typeof rawDate.toDate === 'function') {
+      dateObj = rawDate.toDate();
+    } else {
+      dateObj = new Date(rawDate);
+    }
+    if (isNaN(dateObj.getTime())) {
+      return { day: '??', month: 'TBD', time: 'Scheduled' };
+    }
+    return {
+      day: dateObj.toLocaleDateString('en-US', { day: '2-digit' }),
+      month: dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+      time: dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+    };
+  };
+
+  const { day, month, time } = formatDateTime(rawTime);
+
   return (
     <div 
-      onClick={onClick} 
-      className={`p-8 rounded-[32px] border transition-all hover:-translate-y-2 hover:shadow-2xl cursor-pointer group relative overflow-hidden 
-        ${isLive ? 'border-indigo-500 shadow-indigo-500/20 shadow-lg' : ''} 
-        ${isDark ? 'bg-[#0B1120] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}
+      onClick={onClick}
+      className={`group relative p-1 rounded-[32px] transition-all duration-500 hover:-translate-y-2 cursor-pointer
+        ${isLive 
+          ? 'bg-gradient-to-br from-rose-500 via-purple-500 to-indigo-500 shadow-[0_20px_50px_rgba(244,63,94,0.3)]' 
+          : isDark ? 'bg-slate-800' : 'bg-slate-200'}`}
     >
-      {/* 1. Show the "Live" badge if status is live */}
-      {isLive && (
-        <div className="absolute top-4 right-4 flex items-center gap-2">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-          </span>
-          <span className="text-[8px] font-black text-rose-500 uppercase">Live Now</span>
+      <div className={`relative h-full w-full rounded-[30px] p-6 flex flex-col justify-between overflow-hidden
+        ${isDark ? 'bg-[#0B1120]' : 'bg-white'}`}>
+        
+        {/* Background Kanji Watermark */}
+        <div className="absolute -right-4 -bottom-4 text-7xl font-black opacity-[0.03] select-none group-hover:scale-110 transition-transform duration-700">
+          授業
         </div>
-      )}
 
-      {/* 2. Dynamic Icon based on Class Type */}
-      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-6 border bg-indigo-500/10 border-indigo-500/20 group-hover:scale-110 transition-transform`}>
-        {icons[type] || <Video size={20} />}
-      </div>
+        <div className="flex justify-between items-start mb-6">
+          {/* 🚨 THE FIX: DYNAMIC DATE BADGE */}
+          {/* 🚨 THE FIX: DYNAMIC DATE BADGE */}
+<div className={`flex flex-col items-center justify-center border w-14 h-16 rounded-2xl transition-colors
+  ${isLive 
+    ? 'bg-rose-500/10 border-rose-500/30' 
+    : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10'}`}>
+  
+  <span className={`text-[10px] font-black leading-none ${isLive ? 'text-rose-500' : 'text-indigo-500'}`}>
+    {isLive ? 'LIVE' : month}
+  </span>
+  
+  {/* 👇 Here is the magic size shift: text-sm for NOW, text-xl for the day */}
+  <span className={`font-black mt-0.5 ${
+    isLive 
+      ? 'text-sm text-rose-600 dark:text-rose-400' 
+      : `text-xl ${isDark ? 'text-white' : 'text-slate-900'}`
+  }`}>
+    {isLive ? 'NOW' : day}
+  </span>
+</div>
 
-      {/* 3. The Title from Firestore */}
-      <h4 className={`font-black mb-1 text-lg tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-        {title || "Untitled Lesson"}
-      </h4>
+          {/* Type Icon */}
+          <div className={`p-3 rounded-2xl shadow-inner group-hover:rotate-12 transition-transform
+            ${isLive ? 'bg-rose-500 border-rose-400' : isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+            {icons[type] || icons.Video}
+          </div>
+        </div>
 
-      {/* 4. Teacher Name and Time */}
-      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-        {sensei} • {time}
-      </p>
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            {isLive && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest animate-pulse">
+                Join Class
+              </span>
+            )}
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{sensei}</span>
+          </div>
+          
+          <h4 className={`text-xl font-black leading-tight tracking-tight group-hover:text-indigo-500 transition-colors ${subtitle ? 'mb-1' : 'mb-4'} ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            {title || "Untitled Session"}
+          </h4>
+          
+          {subtitle && (
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-4 line-clamp-1">
+              {subtitle}
+            </p>
+          )}
 
-      {/* Hover Action Link */}
-      <div className="mt-4 flex items-center gap-2 text-indigo-500 text-[10px] font-black uppercase opacity-0 group-hover:opacity-100 transition-opacity">
-        Enter Room <ChevronRight size={14} />
+          <div className="flex items-center justify-between mt-auto">
+            {/* 🚨 THE FIX: DYNAMIC TIME TEXT AT BOTTOM */}
+            <div className={`flex items-center gap-2 ${isLive ? 'text-rose-500 animate-pulse' : 'text-slate-400'}`}>
+              <Clock size={14} className={isLive ? "text-rose-500" : "text-indigo-500"} />
+              <span className="text-xs font-bold">
+                {isLive ? "HAPPENING NOW" : time}
+              </span>
+            </div>
+            
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all group-hover:translate-x-1
+              ${isLive ? 'bg-rose-600 text-white shadow-lg shadow-rose-500/40' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+              <ChevronRight size={18} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -640,5 +1140,36 @@ function SeatStat({ city, status, color, isDark }) {
       <span className={`text-sm font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>{city}</span>
       <span className={`text-[10px] font-black uppercase tracking-tighter px-3 py-1 rounded-full border ${colors[color]}`}>{status}</span>
     </div>
+  );
+}
+
+/* ================= HELPER COMPONENTS ================= */
+
+function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode }) {
+  const activeClass = "bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 ring-1 ring-white/10";
+  const inactiveClass = isDarkMode 
+    ? "text-slate-500 hover:bg-slate-800 hover:text-white" 
+    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900";
+  const dangerClass = "text-slate-500 hover:bg-rose-500/10 hover:text-rose-500";
+
+  return (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl transition-all duration-300 font-black group ${
+        active ? activeClass : danger ? dangerClass : inactiveClass
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        <span className={`${active ? 'text-white' : 'text-slate-400 group-hover:text-inherit'} transition-transform group-hover:scale-110`}>
+          {icon}
+        </span>
+        <span className="text-[13px] tracking-tight">{label}</span>
+      </div>
+      {badge && (
+        <span className="text-[8px] font-black bg-slate-200 dark:bg-slate-800 text-slate-500 px-2 py-1 rounded-full uppercase">
+          {badge}
+        </span>
+      )}
+    </button>
   );
 }

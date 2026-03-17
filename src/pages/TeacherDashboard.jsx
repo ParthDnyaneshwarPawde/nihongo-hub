@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, limit, onSnapshot, orderBy, deleteDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { 
   Video, Mic2, Tv, X, Zap, Loader2, Shield, Send, Search, Bell, Settings, LogOut,
-  Users, Calendar, BookOpen, ShieldCheck, Filter, Plus, MoreHorizontal, BarChart3, Menu, Clock
+  Users, Calendar, BookOpen, ShieldCheck, Filter, Plus, MoreHorizontal, BarChart3, 
+  Menu, Clock, ChevronRight // <--- ADD THIS HERE
 } from 'lucide-react';
 import LiveClassrooms from './LiveClassrooms';
+import TeacherBatches from './TeacherBatches';
 
 export default function TeacherDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -31,6 +33,32 @@ const [tempClassID, setTempClassID] = useState(null);
   const [activeRoomCode, setActiveRoomCode] = useState(""); // Fixed missing state
   // const [tempClassData, setTempClassData] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [myUpcomingClasses, setMyUpcomingClasses] = useState([]);
+
+useEffect(() => {
+  // Simple query: only filter by status
+  const q = query(
+    collection(db, "classes"),
+    where("status", "==", "upcoming")
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log("Found raw docs:", snapshot.docs.length); // DEBUG LOG
+    const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setMyUpcomingClasses(fetched);
+  }, (error) => {
+    console.error("Firebase fetch error:", error.message);
+  });
+
+  return () => unsubscribe();
+}, []);
+const activateScheduledClass = (cls) => {
+  setTempClassData(cls);
+  setTempClassID(cls.id);
+  setActiveType(cls.type || "Video"); // Default to Video if not set
+  setActiveRoomCode(cls.roomID);
+  setStep('password'); // This opens the password input UI on your dashboard
+};
   
 
 useEffect(() => {
@@ -77,6 +105,7 @@ useEffect(() => {
 // 2. The missing function (put this near your other handle functions)
 const broadcastBulletin = async () => {
   if (!bulletinMessage.trim()) {
+    
     alert("Please enter a message first!");
     return;
   }
@@ -89,7 +118,8 @@ const broadcastBulletin = async () => {
       message: bulletinMessage,
       sender: currentUser?.displayName || "Sensei",
       createdAt: serverTimestamp(),
-      type: "global"
+      type: "global",
+      targetLevel: "global"
     });
 
     setBulletinMessage(""); // Clear the text area after sending
@@ -186,6 +216,7 @@ const broadcastBulletin = async () => {
 
       const classRef = doc(db, "classes", tempClassID);
       const roomCode = tempClassData.roomID;
+      const batchLevel = tempClassData.level;
       
       await updateDoc(classRef, {
         code: roomCode,
@@ -193,9 +224,18 @@ const broadcastBulletin = async () => {
         type: activeType,
         teacher: currentUser?.displayName || "Sensei",
         status: 'live',
+        batchLevel: batchLevel,
         createdAt: serverTimestamp(),
         studentsJoined: 0
       });
+
+      await addDoc(collection(db, "bulletins"), {
+      message: `🏮 ${tempClassData.classTitle} is starting! Access Key: ${roomPassword || 'None'}`,
+      sender: currentUser?.displayName || "Sensei",
+      createdAt: serverTimestamp(),
+      type: "batch-specific", // Identifies this isn't global
+      targetLevel: batchLevel  // e.g., "JLPT N5"
+    });
 
       setCurrentSessionId(tempClassID);
       setActiveRoomCode(roomCode); // Save code for invites
@@ -216,6 +256,7 @@ const broadcastBulletin = async () => {
     setActiveType(null);
     setRoomPassword("");
     setError(null);
+    setStep('selection');
   };
 
   const endSession = async () => {
@@ -246,6 +287,20 @@ const broadcastBulletin = async () => {
       alert("Failed to end session. Check your internet.");
     }
   };
+
+  const deleteScheduledClass = async (classId) => {
+  const confirmDelete = window.confirm("Are you sure you want to cancel this scheduled session? This cannot be undone.");
+  if (!confirmDelete) return;
+
+  try {
+    const { deleteDoc } = await import('firebase/firestore'); // Ensure deleteDoc is available
+    await deleteDoc(doc(db, "classes", classId));
+    alert("Session cancelled and removed.");
+  } catch (error) {
+    console.error("Error deleting session:", error);
+    alert("Failed to cancel session.");
+  }
+};
 
   return (
     <div className={`flex h-screen ${isDarkMode ? 'bg-[#0A0F1C] text-slate-200' : 'bg-[#F8FAFC] text-slate-900'} font-sans transition-colors duration-500 overflow-hidden relative`}>
@@ -280,7 +335,13 @@ const broadcastBulletin = async () => {
           
           <div className="pt-8 mt-8 border-t border-slate-100 dark:border-slate-800"> 
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 px-4 opacity-60">Management</p>
-            <SidebarLink icon={<BookOpen size={18}/>} label="Course Materials" active={activeTab === 'materials'} isDarkMode={isDarkMode} />
+            <SidebarLink 
+  icon={<BookOpen size={18}/>} 
+  label="Course Materials" 
+  active={activeTab === 'materials'} 
+  isDarkMode={isDarkMode} 
+  onClick={() => setActiveTab('materials')} // 👈 THE FIX
+/>
             <SidebarLink icon={<Calendar size={18}/>} label="Exam Scheduler" active={activeTab === 'exams'} isDarkMode={isDarkMode} />
           </div>
 
@@ -317,12 +378,19 @@ const broadcastBulletin = async () => {
         <div className={`absolute right-[-15%] top-[5%] text-[500px] lg:text-[700px] font-black select-none pointer-events-none z-0 transition-opacity duration-500 ${isDarkMode ? 'text-white opacity-[0.02]' : 'text-slate-900 opacity-[0.04]'}`}>
           指揮
         </div>
+        
 
         {activeTab === 'live' ? (
          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
         <LiveClassrooms isDarkMode={isDarkMode} />
       </div>
-      ) : (
+      ) :
+      activeTab === 'materials' ? (
+         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 flex-1 overflow-hidden">
+        <TeacherBatches isDarkMode={isDarkMode} />
+      </div>
+      ) :
+       (
       <div>
         <header className={`h-20 border-b backdrop-blur-md px-6 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0A0F1C]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
           <div className="flex items-center gap-4">
@@ -421,7 +489,7 @@ const broadcastBulletin = async () => {
                       </div>
                       
                       <div className="flex gap-3">
-                        <button onClick={resetForm} className="px-6 py-5 rounded-2xl border border-slate-700 font-black text-slate-500 hover:bg-slate-800 transition-all">Cancel</button>
+                        <button type="button" onClick={resetForm} className="px-6 py-5 rounded-2xl border border-slate-700 font-black text-slate-500 hover:bg-slate-800 transition-all">Cancel</button>
                         <button 
                           onClick={launchClass}
                           disabled={isProcessing}
@@ -463,6 +531,65 @@ const broadcastBulletin = async () => {
 </button>
             </div>
           </section>
+
+          <section>
+  <div className="flex justify-between items-end mb-8">
+    <div>
+      <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.3em] mb-2">Class Schedule</h3>
+      <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Upcoming Sessions</h2>
+    </div>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    {myUpcomingClasses.length > 0 ? (
+      myUpcomingClasses.map((cls) => (
+        <div key={cls.id} className={`p-6 rounded-[32px] border flex items-center justify-between transition-all ${isDarkMode ? 'bg-[#0F172A] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+          <div className="flex items-center gap-4">
+    <div className="p-3 bg-rose-500/10 text-rose-500 rounded-2xl"><Calendar size={20} /></div>
+    <div>
+      <h4 className={`font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{cls.classTitle}</h4>
+      <div className="flex items-center gap-2">
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{cls.level}</p>
+        {/* SHOW PASSWORD HERE */}
+        {cls.password && (
+          <span className="text-[10px] bg-slate-800 text-amber-400 px-2 py-0.5 rounded-md font-mono">
+            Key: {cls.password}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+          <div className="flex items-center gap-2">
+  {/* The New Delete Button */}
+  <button 
+    onClick={() => deleteScheduledClass(cls.id)}
+    className={`p-3 rounded-xl border transition-all ${
+      isDarkMode 
+        ? 'border-slate-800 hover:bg-rose-500/10 hover:text-rose-500 text-slate-500' 
+        : 'border-slate-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600'
+    }`}
+    title="Cancel Session"
+  >
+    <X size={16} />
+  </button>
+
+  {/* Your existing Go Live Button */}
+  <button 
+    onClick={() => activateScheduledClass(cls)}
+    className="px-6 py-3 bg-emerald-600 text-white font-black rounded-xl text-xs hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-600/20"
+  >
+    GO LIVE
+  </button>
+</div>
+        </div>
+      ))
+    ) : (
+      <div className={`col-span-full p-10 text-center rounded-[32px] border-2 border-dashed ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-200 text-slate-400'}`}>
+        <p className="text-sm font-bold uppercase tracking-widest">No sessions scheduled.</p>
+      </div>
+    )}
+  </div>
+</section>
 
           <section className="grid grid-cols-1 xl:grid-cols-2 gap-10">
             <div className={`rounded-[32px] border overflow-hidden ${isDarkMode ? 'bg-[#0F172A] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
@@ -511,7 +638,7 @@ const broadcastBulletin = async () => {
       </div>
       )}
       </main>
-      <ClassLaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onNext={handleSaveClass} currentTeacherName={currentUser?.displayName || "Sensei"} />
+      <ClassLaunchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onNext={handleSaveClass} currentTeacherName={currentUser?.displayName || "Sensei"} isDarkMode={isDarkMode} />
     </div>
   );
 }
@@ -602,40 +729,65 @@ function TaskItem({ title, date, level, status, isDarkMode }) {
 }
 
 
-const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName }) => {
+const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName, isDarkMode }) => {
   const [isSaving, setIsSaving] = useState(false);
+  const [dynamicBatches, setDynamicBatches] = useState([]); // 🚨 NEW: Stores your real batches
+  
   const [formData, setFormData] = useState({
-    teacherName: currentTeacherName, // Default
+    teacherName: currentTeacherName || "",
     classTitle: "",
-    level: "N5",
+    level: "", // We will auto-fill this once your batches load
     status: "Starting Now",
     scheduledTime: "",
   });
+
+  // 🚨 THE MAGIC: Fetch this teacher's custom batches from Firestore!
+  useEffect(() => {
+    if (!isOpen) return; // Only fetch when the modal is open
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'batches'),
+      where('teacherIds', 'array-contains', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const fetchedBatches = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setDynamicBatches(fetchedBatches);
+        
+        // Auto-select the first batch in the dropdown so it's not empty
+        setFormData(prev => ({ ...prev, level: fetchedBatches[0].title }));
+      } else {
+        setDynamicBatches([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isOpen]);
 
   useEffect(() => {
     if (currentTeacherName) {
       setFormData(prev => ({ ...prev, teacherName: currentTeacherName }));
     }
   }, [currentTeacherName]);
-  
 
-  
   useEffect(() => {
-  // If the modal is closed, reset the loading state for the next time it opens
-  if (!isOpen) {
-    setIsSaving(false);
-  }
-}, [isOpen]);
+    if (!isOpen) setIsSaving(false);
+  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("submitted");
+    if (!formData.level) {
+      alert("Please create a Course Batch in the Resource Vault first!");
+      return;
+    }
+
     setIsSaving(true);
-    
-    // Autogenerate a 6-digit Room ID
     const autoRoomID = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Combine everything into one object
     const finalClassData = {
       ...formData,
       roomID: autoRoomID,
@@ -643,69 +795,80 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName }) => {
     };
 
     try {
-    // 2. Wait for the parent (handleSaveClass) to finish
-    await onNext(finalClassData);
-  } catch (error) {
-    console.error("Submission failed:", error);
-    setIsSaving(false); // 3. Reset if it fails so teacher can try again
-  }
+      await onNext(finalClassData);
+    } catch (error) {
+      console.error("Submission failed:", error);
+      setIsSaving(false); 
+    }
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-white/10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl">
-        <h2 className="text-2xl font-black text-white mb-6">Class Setup</h2>
+      <div className={`w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in duration-300 border
+        ${isDarkMode ? 'bg-[#0F172A] border-slate-800' : 'bg-white border-slate-200'}`}>
+        <h2 className={`text-2xl font-black mb-6 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Class Setup</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Teacher Name */}
           <div>
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Teacher Name</label>
             <input 
               required
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+              className={`w-full px-4 py-3 rounded-2xl border outline-none font-bold text-sm transition-all
+                ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'}`}
               value={formData.teacherName}
               onChange={(e) => setFormData({...formData, teacherName: e.target.value})}
             />
           </div>
 
-          {/* Class Title */}
           <div>
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Class Title</label>
             <input 
               required
-              placeholder="e.g. Kanji Masterclass"
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+              placeholder="e.g. Chapter 1 Vocab Review"
+              className={`w-full px-4 py-3 rounded-2xl border outline-none font-bold text-sm transition-all
+                ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'}`}
               onChange={(e) => setFormData({...formData, classTitle: e.target.value})}
             />
           </div>
 
-          {/* Level / Batch Dropdown */}
+          {/* 🚨 THE DYNAMIC DROPDOWN */}
           <div>
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Batch / Level</label>
-            <select 
-              className="w-full bg-slate-800 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none appearance-none"
-              onChange={(e) => setFormData({...formData, level: e.target.value})}
-            >
-              <option>JLPT N5</option>
-              <option>JLPT N4</option>
-              <option>JLPT N3</option>
-              <option>JLPT N2</option>
-              <option>JLPT N1</option>
-              <option>JLPT N5 Pro</option>
-              <option>JLPT N4 Pro</option>
-              <option>JLPT N3 Pro</option>
-              <option>JLPT N2 Pro</option>
-              <option>JLPT N1 Pro</option>
-            </select>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">
+              Target Batch (From Vault)
+            </label>
+            <div className="relative mt-1">
+              <select 
+                required
+                className={`w-full px-4 py-3 rounded-2xl border appearance-none cursor-pointer font-black text-sm outline-none transition-all
+                  ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'}`}
+                value={formData.level}
+                onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+              >
+                {dynamicBatches.length > 0 ? (
+                  dynamicBatches.map((batch) => (
+                    <option key={batch.id} value={batch.title} className="text-slate-900">
+                      {batch.title} ({batch.level})
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled className="text-rose-500">
+                    No Batches Found. Go to Resource Vault first!
+                  </option>
+                )}
+              </select>
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                <ChevronRight size={16} className="rotate-90" />
+              </div>
+            </div>
           </div>
 
-          {/* Status Dropdown */}
           <div>
             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-2">Status</label>
             <select 
-              className="w-full bg-slate-800 border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
+              className={`w-full px-4 py-3 rounded-2xl border outline-none font-bold text-sm transition-all
+                ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
               value={formData.status}
               onChange={(e) => setFormData({...formData, status: e.target.value})}
             >
@@ -714,36 +877,29 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName }) => {
             </select>
           </div>
 
-          {/* Conditional Time Input */}
           {formData.status === "Upcoming" && (
             <div className="animate-in slide-in-from-top-2 duration-300">
               <label className="text-[10px] font-black text-rose-500 uppercase tracking-widest ml-2">Scheduled Time</label>
               <input 
                 type="datetime-local"
                 required
-                className="w-full bg-white/5 border border-rose-500/30 rounded-2xl px-4 py-3 text-white outline-none"
+                className={`w-full px-4 py-3 rounded-2xl border outline-none font-bold text-sm transition-all
+                  ${isDarkMode ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-rose-50 border-rose-200 text-rose-600'}`}
                 onChange={(e) => setFormData({...formData, scheduledTime: e.target.value})}
               />
             </div>
           )}
 
           <div className="pt-4 flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-4 text-slate-400 font-bold hover:text-white transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-4 text-slate-500 font-bold hover:text-slate-900 dark:hover:text-white transition-colors">Cancel</button>
             <button 
-  type="submit" 
-  disabled={isSaving} // Prevent double clicks
-  className={`flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3
-    ${isSaving ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 active:scale-95'}`}
->
-  {isSaving ? (
-    <>
-      <Loader2 className="animate-spin" size={20} />
-      SECURING SESSION...
-    </>
-  ) : (
-    "Continue to Password"
-  )}
-</button>
+              type="submit" 
+              disabled={isSaving || dynamicBatches.length === 0} 
+              className={`flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-3
+                ${(isSaving || dynamicBatches.length === 0) ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 active:scale-95'}`}
+            >
+              {isSaving ? <><Loader2 className="animate-spin" size={20} /> SECURING...</> : "Continue to Password"}
+            </button>
           </div>
         </form>
       </div>

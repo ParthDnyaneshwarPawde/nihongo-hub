@@ -7,6 +7,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Room from "./pages/Room"; 
 import LiveClassrooms from './pages/LiveClassrooms';
 import React, { useState } from 'react';
+import CourseCatalog from './pages/CourseCatalog';
+import ProfileSettings from './pages/ProfileSettings';
+import TeacherBatches from './pages/TeacherBatches';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -18,9 +21,8 @@ function App() {
 
         {/* Semi-Protected (Need login, but any role can access) */}
         <Route path="/onboarding" element={
-          <ProtectedRoute>
+
             <Onboarding />
-          </ProtectedRoute>
         } />
 
         {/* Student Only */}
@@ -39,6 +41,21 @@ function App() {
         <Route path="/live-classrooms" element={
           <ProtectedRoute requiredRole="teacher">
             <LiveClassrooms isDarkMode={isDarkMode} />
+          </ProtectedRoute>
+        } />
+        <Route path="/course-catalog" element={
+          <ProtectedRoute requiredRole="student">
+            <CourseCatalog />
+          </ProtectedRoute>
+        } />
+        <Route path="/teacher-batches" element={
+          <ProtectedRoute requiredRole="teacher">
+            <TeacherBatches isDarkMode={isDarkMode} />
+          </ProtectedRoute>
+        } />
+        <Route path="/profile-settings" element={
+          <ProtectedRoute requiredRole="student">
+            <ProfileSettings />
           </ProtectedRoute>
         } />
         
