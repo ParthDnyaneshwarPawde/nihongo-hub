@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, FileText, BarChart3, MessageSquare, Settings, LogOut, 
   Search, Bell, Globe, Download, Lock, ChevronRight, Clock, 
-  Video, Mic2, Tv, Trophy, Calendar, Zap, Info, Filter, MessageCircle, Menu, X, ShieldCheck
+  Video, Mic2, Tv, Trophy, Calendar, Zap, Info, Filter, MessageCircle, Menu, X, ShieldCheck, Loader2
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase'; // Adjust path if your firebase file is elsewhere
 import { collection, query, where, onSnapshot, limit, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
+import ResourceVault from './ResourceVault';
 
 export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState('learn');
@@ -23,6 +24,8 @@ export default function StudentDashboard() {
   // 3. The 5 Free Batches
 // 1. These are fetched from Firestore (The ones they paid for)
 const [currentCourses, setCurrentCourses] = useState([]); 
+
+const [dbUserData, setDbUserData] = useState(null);
 
 // 2. These are always available to everyone
 const [freeBatches, setFreeBatches] = useState([
@@ -48,6 +51,75 @@ const [freeBatches, setFreeBatches] = useState([
 
   // 1. New state to hold the real batches from Firestore
 const [dynamicBatches, setDynamicBatches] = useState([]);
+
+
+const [enrolledCourseTitles, setEnrolledCourseTitles] = useState([]);
+const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+useEffect(() => {
+  const fetchStudentAccess = async () => {
+    if (auth.currentUser) {
+      try {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          // This array looks like: ["JLPT N4 | The Bridge", "JLPT N5 Mastery"]
+          setEnrolledCourseTitles(data.enrolledCourses || []);
+        }
+      } catch (err) {
+        console.error("Dashboard Access Error:", err);
+      } finally {
+        setIsDataLoaded(true);
+      }
+    }
+  };
+  fetchStudentAccess();
+}, []);
+
+
+useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const userRef = doc(db, "users", currentUser.uid);
+    
+    const unsubscribe = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        
+        // 🚨 NEW: Save the entire Firestore document to state
+        setDbUserData(userData);
+        
+        // 1. Sync their courses
+        if (userData.enrolledCourses && Array.isArray(userData.enrolledCourses)) {
+          setCurrentCourses(userData.enrolledCourses);
+        } else {
+          setCurrentCourses([]);
+        }
+
+        // 2. Sync their last selected level
+        if (userData.lastSelectedLevel) {
+          setLevel(userData.lastSelectedLevel);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // 🚨 SMART NAME FORMATTER
+  const getDisplayName = () => {
+    if (dbUserData?.firstName || dbUserData?.lastName) {
+      return `${dbUserData.firstName || ''} ${dbUserData.lastName || ''}`.trim();
+    }
+    if (dbUserData?.displayName) return dbUserData.displayName.trim();
+    if (currentUser?.displayName) return currentUser.displayName;
+    return "Samurai Learner";
+  };
+
+  const displayName = getDisplayName();
+  const displayInitial = displayName.charAt(0).toUpperCase();
 
 // 2. Fetch the batches dynamically
 useEffect(() => {
@@ -347,7 +419,7 @@ useEffect(() => {
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 px-4">Menu</p>
           <SidebarLink icon={<Globe size={18}/>} label="Learn" active={activeTab === 'learn'} onClick={() => handleTabClick('learn')} isDarkMode={isDarkMode} />
-          <SidebarLink icon={<Download size={18}/>} label="Free Resources" active={activeTab === 'resources'} onClick={() => handleTabClick('resources')} isDarkMode={isDarkMode} />
+          <SidebarLink icon={<Download size={18}/>} label="Resource Vault" active={activeTab === 'vault'} onClick={() => handleTabClick('vault')} isDarkMode={isDarkMode} />
           <SidebarLink icon={<MessageCircle size={18}/>} label="Doubts" active={activeTab === 'doubts'} onClick={() => handleTabClick('doubts')} isDarkMode={isDarkMode} />
           <SidebarLink icon={<BarChart3 size={18}/>} label="Analytics" active={activeTab === 'analytics'} badge="Soon" isDarkMode={isDarkMode} />
           <SidebarLink icon={<FileText size={18}/>} label="Exam Info" active={activeTab === 'exam'} onClick={() => handleTabClick('exam')} isDarkMode={isDarkMode} />
@@ -417,141 +489,146 @@ useEffect(() => {
 </div> */}
 
         {/* --- TOP HEADER --- */}
-        <header className={`h-20 border-b backdrop-blur-md px-6 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0F172A]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
-          <div className="flex items-center gap-4 lg:gap-8">
-            <button className="lg:hidden p-2 text-slate-500" onClick={() => setIsSidebarOpen(true)}>
+        {/* --- TOP HEADER --- */}
+        <header className={`h-20 border-b backdrop-blur-md px-4 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0F172A]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
+          <div className="flex items-center gap-3 lg:gap-8">
+            <button className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors" onClick={() => setIsSidebarOpen(true)}>
               <Menu size={24} />
             </button>
+            
             {/* --- CUSTOM COURSE DROPDOWN --- */}
-<div className="relative hidden sm:block">
-  
-  {/* The Trigger Button */}
-  <button 
-    onClick={() => setIsCourseMenuOpen(!isCourseMenuOpen)}
-    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all duration-300 shadow-sm
-      ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500' : 'bg-white border-slate-200 hover:border-indigo-400'}`}
-  >
-    <BookOpen size={16} className="text-indigo-500" />
-    <span className={`font-black text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{level}</span>
-    <ChevronRight size={14} className={`text-slate-400 transition-transform duration-300 ${isCourseMenuOpen ? 'rotate-90' : 'rotate-0'}`} />
-  </button>
+            {/* 🚨 FIX: Removed 'hidden sm:block' so it shows on mobile */}
+            <div className="relative">
+              {/* The Trigger Button */}
+              <button 
+                onClick={() => setIsCourseMenuOpen(!isCourseMenuOpen)}
+                className={`flex items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2 lg:py-2.5 rounded-xl border transition-all duration-300 shadow-sm
+                  ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500' : 'bg-white border-slate-200 hover:border-indigo-400'}`}
+              >
+                <BookOpen size={16} className="text-indigo-500 shrink-0" />
+                <span className={`font-black text-xs lg:text-sm truncate max-w-[100px] sm:max-w-[150px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{level}</span>
+                <ChevronRight size={14} className={`text-slate-400 shrink-0 transition-transform duration-300 ${isCourseMenuOpen ? 'rotate-90' : 'rotate-0'}`} />
+              </button>
 
-  {/* Invisible Overlay to close when clicking outside */}
-  {isCourseMenuOpen && (
-    <div className="fixed inset-0 z-[90]" onClick={() => setIsCourseMenuOpen(false)}></div>
-  )}
+              {/* Invisible Overlay to close when clicking outside */}
+              {isCourseMenuOpen && (
+                <div className="fixed inset-0 z-[90]" onClick={() => setIsCourseMenuOpen(false)}></div>
+              )}
 
-  {/* The Dropdown Menu */}
-{isCourseMenuOpen && (
-  <div className={`absolute top-full mt-2 left-0 w-80 rounded-2xl shadow-2xl border z-[100] animate-in fade-in slide-in-from-top-2 duration-200 
-    ${isDarkMode ? 'bg-slate-900 border-slate-700 shadow-black/50' : 'bg-white border-slate-200'}`}
-    style={{ maxHeight: '85vh', overflowY: 'auto' }}
-  >
-    
-    {/* SECTION 1: My Courses (Unlimted) */}
-    <div className="p-3 pb-0">
-      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-3 mb-2">My Courses</p>
-      <div className="space-y-1">
-        {currentCourses.length > 0 ? (
-          currentCourses.map(course => (
-            <button
-              key={course}
-              onClick={() => { setLevel(course); setIsCourseMenuOpen(false); }}
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-between
-                ${level === course ? 'bg-indigo-500/10 text-indigo-500' : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-50'}`}
-            >
-              <span className="truncate pr-2">{course}</span>
-              {level === course && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></div>}
-            </button>
-          ))
-        ) : (
-          <p className="px-3 py-2 text-xs font-bold text-slate-500 italic">No premium courses yet.</p>
-        )}
-      </div>
-    </div>
+              {/* The Dropdown Menu */}
+              {isCourseMenuOpen && (
+                <div className={`absolute top-full mt-2 left-0 w-72 lg:w-80 rounded-2xl shadow-2xl border z-[100] animate-in fade-in slide-in-from-top-2 duration-200 
+                  ${isDarkMode ? 'bg-slate-900 border-slate-700 shadow-black/50' : 'bg-white border-slate-200'}`}
+                  style={{ maxHeight: '85vh', overflowY: 'auto' }}
+                >
+                  
+                  {/* SECTION 1: My Courses */}
+                  <div className="p-3 pb-0">
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest px-3 mb-2">My Courses</p>
+                    <div className="space-y-1">
+                      {currentCourses.length > 0 ? (
+                        currentCourses.map(course => (
+                          <button
+                            key={course}
+                            onClick={() => { setLevel(course); setIsCourseMenuOpen(false); }}
+                            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-between
+                              ${level === course ? 'bg-indigo-500/10 text-indigo-500' : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-50'}`}
+                          >
+                            <span className="truncate pr-2">{course}</span>
+                            {level === course && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></div>}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2 text-xs font-bold text-slate-500 italic">No premium courses yet.</p>
+                      )}
+                    </div>
+                  </div>
 
-    <div className={`h-px w-full my-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}></div>
+                  <div className={`h-px w-full my-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}></div>
 
-    {/* SECTION 2: Free Batches (Limited to 6) */}
-    <div className="p-3 pt-0">
-      <div className="flex justify-between items-center px-3 mb-2 mt-2">
-        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Free Batches</p>
-        
-        {/* GREEN VIEW ALL LINK */}
-        {freeBatches.length > 6 && (
-          <button 
-            onClick={() => { setIsCourseMenuOpen(false); navigate('/course-catalog?filter=free'); }}
-            className={`text-[10px] font-black uppercase tracking-tighter px-2 py-1 rounded transition-colors
-              ${isDarkMode ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-emerald-600 hover:bg-emerald-50'}`}
-          >
-            View All →
-          </button>
-        )}
-      </div>
+                  {/* SECTION 2: Free Batches */}
+                  <div className="p-3 pt-0">
+                    <div className="flex justify-between items-center px-3 mb-2 mt-2">
+                      <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Free Batches</p>
+                      {freeBatches.length > 6 && (
+                        <button 
+                          onClick={() => { setIsCourseMenuOpen(false); navigate('/course-catalog?filter=free'); }}
+                          className={`text-[10px] font-black uppercase tracking-tighter px-2 py-1 rounded transition-colors
+                            ${isDarkMode ? 'text-emerald-400 hover:bg-emerald-500/10' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                        >
+                          View All →
+                        </button>
+                      )}
+                    </div>
 
-      <div className="space-y-1">
-        {freeBatches.slice(0, 6).map(batch => (
-          <button
-            key={batch}
-            onClick={() => { setLevel(batch); setIsCourseMenuOpen(false); }}
-            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-between
-              ${level === batch ? 'bg-emerald-500/10 text-emerald-500' : isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            <span className="truncate pr-2">{batch}</span>
-            {level === batch && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></div>}
-          </button>
-        ))}
-      </div>
-    </div>
+                    <div className="space-y-1">
+                      {freeBatches.slice(0, 6).map(batch => (
+                        <button
+                          key={batch}
+                          onClick={() => { setLevel(batch); setIsCourseMenuOpen(false); }}
+                          className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-between
+                            ${level === batch ? 'bg-emerald-500/10 text-emerald-500' : isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          <span className="truncate pr-2">{batch}</span>
+                          {level === batch && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></div>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-    {/* SECTION 3: EXPLORE CATALOG AT BOTTOM */}
-    <div className={`p-4 border-t sticky bottom-0 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-      <button 
-        onClick={() => {
-          setIsCourseMenuOpen(false);
-          navigate('/course-catalog');
-        }}
-        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
-      >
-        Explore Full Catalog
-      </button>
-    </div>
-
-  </div>
-)}
-</div>
-            <div className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-rose-500/10 rounded-full border border-rose-500/20">
+                  {/* SECTION 3: EXPLORE CATALOG */}
+                  <div className={`p-4 border-t sticky bottom-0 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                    <button 
+                      onClick={() => {
+                        setIsCourseMenuOpen(false);
+                        navigate('/course-catalog');
+                      }}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      Explore Full Catalog
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* 🚨 FIX: Added 'hidden md:flex' so this hides on mobile and saves space */}
+            <div className="hidden md:flex items-center gap-2 px-3 lg:px-4 py-2 bg-rose-500/10 rounded-full border border-rose-500/20">
               <Clock size={14} className="text-rose-500" />
               <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest truncate">114 Days to JLPT</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 lg:gap-4">
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2.5 rounded-xl border transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-              {isDarkMode ? <Zap size={18} className="text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]" /> : <Clock size={18} className="text-slate-600" />}
+          <div className="flex items-center gap-2 lg:gap-4">
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2 lg:p-2.5 rounded-xl border transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+              {isDarkMode ? <Zap size={16} className="text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]" /> : <Clock size={16} className="text-slate-600" />}
             </button>
             <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
+            
             <button 
-  onClick={() => setIsProfileModalOpen(true)} // 👈 TRIGGER ADDED HERE
-  className="flex items-center gap-3 group text-left outline-none"
->
-  <div className="text-right hidden sm:block">
-    <p className={`text-sm font-black transition-colors ${isDarkMode ? 'text-white group-hover:text-indigo-400' : 'text-slate-900 group-hover:text-indigo-600'}`}>
-      {currentUser?.displayName || "Samurai Learner"}
-    </p>
-    <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Premium Member</p>
-  </div>
-  
-  <div className="w-10 h-10 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-800 shadow-lg flex items-center justify-center font-bold text-white transition-all group-hover:scale-110 group-active:scale-95">
-    {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : 'S'}
-  </div>
-</button>
+              onClick={() => setIsProfileModalOpen(true)}
+              className="flex items-center gap-3 group text-left outline-none"
+            >
+              <div className="text-right hidden sm:block">
+                <p className={`text-sm font-black transition-colors ${isDarkMode ? 'text-white group-hover:text-indigo-400' : 'text-slate-900 group-hover:text-indigo-600'}`}>
+                  {displayName}
+                </p>
+                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Premium Member</p>
+              </div>
+              <div className="w-9 h-9 lg:w-10 lg:h-10 rounded-full bg-indigo-600 border-2 border-white dark:border-slate-800 shadow-lg flex items-center justify-center font-bold text-white transition-all group-hover:scale-110 group-active:scale-95 shrink-0">
+                {displayInitial}
+              </div>
+            </button>
           </div>
         </header>
 
         {/* --- MAIN FEED (SCROLLABLE) --- */}
         <div className="flex-1 overflow-y-auto p-6 lg:p-10 z-10 custom-scrollbar space-y-12">
+          {/* 🚨 TAB LOGIC START 🚨 */}
           
+          {/* TAB 1: LEARN (The Study Dojo) */}
+          {activeTab === 'learn' && (
+            <div className="space-y-12 animate-in fade-in duration-500">
           {/* 1. HERO & PROGRESS */}
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
             <div className="lg:col-span-2 space-y-4 animate-in fade-in slide-in-from-left-6 duration-700">
@@ -771,6 +848,42 @@ useEffect(() => {
             <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#4f46e5 0.8px, transparent 0.8px)', backgroundSize: '32px 32px' }}></div>
           </section>
 
+          </div>
+          )}
+
+          {/* TAB 2: RESOURCE VAULT (Your New File) */}
+        {activeTab === 'vault' && (
+  isDataLoaded ? (
+    <ResourceVault 
+      selectedCourseTitle={level}             
+      enrolledCourseTitles={currentCourses}    
+      isDarkMode={isDarkMode} 
+      currentUser={currentUser}
+    />
+  ) : (
+    <div className="flex flex-col items-center justify-center py-32 space-y-4">
+      <Loader2 className="animate-spin text-indigo-500" size={40} />
+      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+        Authorizing Access...
+      </p>
+    </div>
+  )
+)}
+
+          {/* TAB 3: DOUBTS (Placeholder) */}
+          {activeTab === 'doubts' && (
+            <div className="flex flex-col items-center justify-center py-32 text-center">
+              <div className="w-24 h-24 bg-indigo-600/10 rounded-full flex items-center justify-center mb-6">
+                <MessageSquare size={40} className="text-indigo-500" />
+              </div>
+              <h2 className="text-3xl font-black italic uppercase tracking-tighter">AI Doubt Solver</h2>
+              <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.4em] mt-2">Dojo Intelligence Offline</p>
+              <p className="text-slate-500 font-bold uppercase text-[8px] tracking-[0.4em] mt-2">Coming Soon...</p>
+            </div>
+          )}
+          
+          {/* 🚨 TAB LOGIC END 🚨 */}
+
         </div>
       </main>
       {/* ================= PASSWORD GATE MODAL ================= */}
@@ -955,10 +1068,10 @@ useEffect(() => {
       {/* Modal Header/Profile Bio */}
       <div className={`p-8 text-center border-b ${isDarkMode ? 'border-white/5 bg-white/5' : 'border-slate-100 bg-slate-50'}`}>
         <div className="w-20 h-20 rounded-3xl bg-indigo-600 mx-auto mb-4 flex items-center justify-center text-3xl font-black text-white shadow-xl shadow-indigo-600/20">
-          {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : 'S'}
+          {displayInitial}
         </div>
         <h3 className={`text-xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-          {currentUser?.displayName || "Samurai Learner"}
+          {displayName}
         </h3>
         <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-1">Verified Member</p>
       </div>

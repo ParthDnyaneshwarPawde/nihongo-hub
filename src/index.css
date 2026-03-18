@@ -1,57 +1,41 @@
 @import "tailwindcss";
 
+/* Custom Scrollbar for a premium look */
+/* .custom-scrollbar::-webkit-scrollbar {
 
-/* Custom Premium Scrollbar for the Vault/Catalog
-.premium-scroll::-webkit-scrollbar {
-  width: 5px;
+
+  height: 4px;
+  width: 4px;
 }
-
-.premium-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 10px;
-}
-
-.premium-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #4f46e5, #ec4899);
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.premium-scroll::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
-}
-
-/* For Firefox */
-/* .premium-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #4f46e5 rgba(255, 255, 255, 0.02);
-/* } */ 
-
-/* Premium Themed Scrollbar */
-/* .premium-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.premium-scroll::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e11d48; 
+  border-radius: 10px;
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #e11d48 transparent;
+} */
 
-.premium-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #4f46e5, #ec4899);
+/* 🌑 NEUTRAL ADAPTIVE SCROLLBAR */
+/* Neutral adaptive scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b; /* slate-800 matches black/dark bg */
   border-radius: 20px;
 }
-
-.premium-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #4f46e5 transparent;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 for light mode */
+  border-radius: 20px;
 }
-
-/* Hide scrollbar for Chrome, Safari and Oper
-/* Add this to index.css */
-.hide-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
-}
-.hide-scrollbar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+img {
+  pointer-events: none;
 }

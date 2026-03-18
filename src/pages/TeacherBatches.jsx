@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   collection, query, onSnapshot, addDoc, updateDoc,
-  serverTimestamp, getDocs, deleteDoc, doc 
+  serverTimestamp, getDocs, deleteDoc, doc, where
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { 
@@ -10,6 +10,7 @@ import {
   Globe, Lock, Unlock, Tag, Activity, Trash2, Zap, Layers, Image as ImageIcon,
   ListChecks, Layout, FileUp, ArrowRight, ArrowLeft, RotateCw, Pencil
 } from 'lucide-react';
+import BatchCommandCenter from './BatchCommandCenter';
 
 export default function TeacherBatches({ isDarkMode = false }) {
   const [myBatches, setMyBatches] = useState([]);
@@ -47,6 +48,69 @@ export default function TeacherBatches({ isDarkMode = false }) {
   const [selectedTeachers, setSelectedTeachers] = useState([]);
 
   const BATCH_LEVELS = ["JLPT N5", "JLPT N4", "JLPT N3", "JLPT N2", "JLPT N1", "Custom Course"];
+
+  const [selectedBatch, setSelectedBatch] = useState(null);
+
+  // --- TEACHER SEARCH LOGIC ---
+  useEffect(() => {
+    if (!teacherSearch.trim()) {
+      setFoundTeachers([]);
+      return;
+    }
+
+    const searchRegistry = async () => {
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('role', '==', 'teacher'));
+        const querySnapshot = await getDocs(q);
+        
+        const results = [];
+        const searchTerm = teacherSearch.toLowerCase().trim(); // Clean user input
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          const uid = doc.id;
+          
+          // 1. Clean up database fields (removes trailing spaces like "Veeru ")
+          const first = (data.firstName || '').trim();
+          const last = (data.lastName || '').trim();
+          const email = (data.email || '').toLowerCase().trim();
+          const googleName = (data.displayName || '').trim();
+          
+          // 2. Display Name Logic: Google Name -> First + Last -> Unknown
+          const constructedName = `${first} ${last}`.trim();
+          const finalDisplayName = googleName || constructedName || 'Unknown Sensei';
+          
+          // 3. Match against anything (Name, Email, or UID)
+          const matchesName = finalDisplayName.toLowerCase().includes(searchTerm);
+          const matchesEmail = email.includes(searchTerm);
+          const matchesUid = uid.toLowerCase().includes(searchTerm);
+
+          const isMatch = matchesName || matchesEmail || matchesUid;
+          const isNotMe = uid !== auth.currentUser?.uid;
+          const isNotAlreadySelected = !selectedTeachers.some(t => t.uid === uid);
+
+          if (isMatch && isNotMe && isNotAlreadySelected) {
+            results.push({ 
+              uid, 
+              displayName: finalDisplayName,
+              email: email || 'No email provided' 
+            });
+          }
+        });
+        
+        setFoundTeachers(results);
+      } catch (error) {
+        console.error("Search Error:", error);
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      searchRegistry();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [teacherSearch, selectedTeachers]);
 
   useEffect(() => {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
@@ -87,6 +151,23 @@ export default function TeacherBatches({ isDarkMode = false }) {
     });
     setKeyPoints(batch.keyPoints || []);
     setAddedCoupons(batch.coupons || []);
+    
+    // 🚨 3. Load existing collaborators into the UI (Excluding yourself so you don't show up twice in the pill list)
+    if (batch.teacherIds && batch.teacherNames) {
+      const existingCollabs = [];
+      batch.teacherIds.forEach((id, index) => {
+        if (id !== auth.currentUser?.uid) {
+          existingCollabs.push({
+            uid: id,
+            displayName: batch.teacherNames[index] || "Unknown Sensei"
+          });
+        }
+      });
+      setSelectedTeachers(existingCollabs);
+    } else {
+      setSelectedTeachers([]);
+    }
+    
     setIsCreateModalOpen(true);
   };
 
@@ -95,13 +176,19 @@ export default function TeacherBatches({ isDarkMode = false }) {
     setIsSaving(true);
     const user = auth.currentUser;
     
+    // 🚨 1. Smart merge: Always keep the creator (you), and add the selected collaborators
+    // We use Set to prevent accidental duplicates
+    const finalTeacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
+    const finalTeacherNames = [...new Set([user.displayName || "Sensei", ...selectedTeachers.map(t => t.displayName)])];
+
     const batchData = {
       ...newBatch,
       price: newBatch.isFree ? 0 : parseFloat(newBatch.price),
       keyPoints,
       coupons: addedCoupons.map(c => ({ ...c, usedCount: c.usedCount || 0 })),
-      teacherIds: editingBatchId ? undefined : [user.uid, ...selectedTeachers.map(t => t.uid)],
-      teacherNames: editingBatchId ? undefined : [user.displayName || "Sensei", ...selectedTeachers.map(t => t.displayName)],
+      // 🚨 2. We removed the "undefined" block. It now ALWAYS saves the teachers!
+      teacherIds: finalTeacherIds,
+      teacherNames: finalTeacherNames,
       updatedAt: serverTimestamp(),
     };
 
@@ -119,7 +206,7 @@ export default function TeacherBatches({ isDarkMode = false }) {
         });
       }
       closeModal();
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("Save Error:", err); }
     setIsSaving(false);
   };
 
@@ -214,6 +301,7 @@ export default function TeacherBatches({ isDarkMode = false }) {
                 <BatchCard 
                   key={b.id} 
                   batch={b} 
+                  onClick={() => setSelectedBatch(b)}
                   isDark={isDarkMode} 
                   canAccess={true} 
                   onEdit={() => openEditModal(b)} 
@@ -248,8 +336,7 @@ export default function TeacherBatches({ isDarkMode = false }) {
 
       {/* ================= 2-STEP ARCHITECT MODAL ================= */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[200] flex items-center justify-center p-4 lg:p-10 overflow-y-auto premium-scroll">
-          <div className={`w-full max-w-6xl rounded-[4rem] border shadow-[0_0_80px_rgba(79,70,229,0.2)] relative overflow-hidden flex flex-col transition-all duration-700 ${isDarkMode ? 'bg-[#0B1120] border-white/5' : 'bg-white border-slate-200'}`}>
+  <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[200] flex items-start justify-center p-4 lg:p-10 pt-12 lg:pt-24 overflow-y-auto premium-scroll">          <div className={`w-full max-w-6xl rounded-[4rem] border shadow-[0_0_80px_rgba(79,70,229,0.2)] relative overflow-hidden flex flex-col transition-all duration-700 ${isDarkMode ? 'bg-[#0B1120] border-white/5' : 'bg-white border-slate-200'}`}>
             
             {/* Modal Character */}
             <div className="absolute -right-10 -top-10 text-[300px] font-black text-white/[0.02] select-none pointer-events-none">創</div>
@@ -272,9 +359,22 @@ export default function TeacherBatches({ isDarkMode = false }) {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 animate-in slide-in-from-right-8 duration-500">
                   <div className="space-y-8">
                     <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] ml-2">Product Title</label>
-                      <input required value={newBatch.title} onChange={e => setNewBatch({...newBatch, title: e.target.value})} className="w-full p-6 rounded-[2rem] bg-slate-900 border border-slate-800 text-white font-bold text-lg focus:border-indigo-500 transition-all outline-none" placeholder="Ex: Master N3 Vocabulary" />
-                    </div>
+  <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] ml-2">
+    Product Title {editingBatchId && <span className="text-rose-500 ml-2">(LOCKED)</span>}
+  </label>
+  <input 
+    required 
+    value={newBatch.title} 
+    onChange={e => setNewBatch({...newBatch, title: e.target.value})} 
+    disabled={!!editingBatchId} // 🚨 THIS DISABLES IT DURING EDITING
+    className={`w-full p-6 rounded-[2rem] bg-slate-900 border border-slate-800 text-white font-bold text-lg transition-all outline-none ${
+      editingBatchId 
+        ? 'opacity-50 cursor-not-allowed' // Visual feedback that it's locked
+        : 'focus:border-indigo-500' 
+    }`} 
+    placeholder="Ex: Master N3 Vocabulary" 
+  />
+</div>
                     
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-3">
@@ -317,15 +417,60 @@ export default function TeacherBatches({ isDarkMode = false }) {
                   <div className="space-y-8 flex flex-col">
                     <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] ml-2">Collaborators</label>
                     <div className="flex-1 bg-slate-950/50 p-10 rounded-[3rem] border border-slate-800 shadow-inner flex flex-col space-y-6">
-                       <div className="flex gap-2">
-                          <input value={teacherSearch} onChange={e => setTeacherSearch(e.target.value)} className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 text-sm text-white outline-none" placeholder="Sensei Name / UID" />
-                          <button type="button" className="bg-indigo-600 p-5 rounded-2xl text-white"><Search size={20}/></button>
-                       </div>
-                       <div className="flex-1 overflow-y-auto premium-scroll pr-2 opacity-50"><p className="text-[10px] uppercase font-black text-center mt-20 tracking-widest">Registry Search Offline</p></div>
-                       <div className="pt-6 border-t border-slate-800 flex flex-wrap gap-2">
-                         <span className="bg-indigo-600 text-white text-[10px] font-black px-5 py-2.5 rounded-full uppercase tracking-tighter">Verified Lead (You)</span>
-                       </div>
-                    </div>
+   <div className="flex gap-2">
+      <input 
+        value={teacherSearch} 
+        onChange={e => setTeacherSearch(e.target.value)} 
+        className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-6 text-sm text-white font-bold outline-none focus:border-indigo-500 transition-all" 
+        placeholder="Search Sensei Name or UID..." 
+      />
+      <button type="button" className="bg-indigo-600 p-5 rounded-2xl text-white shadow-lg hover:scale-105 transition-all">
+        <Search size={20}/>
+      </button>
+   </div>
+   
+   {/* --- SEARCH RESULTS --- */}
+   <div className="flex-1 overflow-y-auto premium-scroll pr-2 space-y-2">
+      {teacherSearch.length === 0 ? (
+        <p className="text-[10px] uppercase font-black text-center mt-10 tracking-widest text-slate-600">Type to search registry</p>
+      ) : foundTeachers.length === 0 ? (
+        <p className="text-[10px] uppercase font-black text-center mt-10 tracking-widest text-rose-500">No matching Sensei found</p>
+      ) : (
+        foundTeachers.map(t => (
+          <div key={t.uid} className="flex items-center justify-between p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
+            <div>
+              <p className="text-xs font-black text-white">{t.displayName}</p>
+              {/* Now shows their email instead of just the UID for easier identification */}
+              <p className="text-[9px] font-bold text-slate-500 tracking-wider">{t.email}</p> 
+            </div>
+            <button 
+              type="button" 
+              onClick={() => {
+                setSelectedTeachers([...selectedTeachers, t]);
+                setTeacherSearch(''); 
+              }} 
+              className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-all"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        ))
+      )}
+   </div>
+   
+   {/* --- SELECTED COLLABORATORS --- */}
+   <div className="pt-6 border-t border-slate-800 flex flex-wrap gap-3">
+     <span className="bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest flex items-center gap-2">
+       <Shield size={12}/> Verified Lead (You)
+     </span>
+     {selectedTeachers.map(t => (
+       <span key={t.uid} className="bg-slate-800 text-white border border-slate-700 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest flex items-center gap-2">
+         {t.displayName}
+         <X size={12} className="cursor-pointer hover:text-rose-500 transition-colors" onClick={() => setSelectedTeachers(selectedTeachers.filter(st => st.uid !== t.uid))} />
+       </span>
+     ))}
+   </div>
+</div>
                     <button type="button" onClick={() => setCurrentStep(2)} className="w-full py-8 bg-white text-black font-black rounded-[2.5rem] flex items-center justify-center gap-4 hover:scale-[1.02] transition-all shadow-2xl uppercase tracking-[0.2em] text-sm">
                       Next: Design Interface <ArrowRight size={20}/>
                     </button>
@@ -377,6 +522,14 @@ export default function TeacherBatches({ isDarkMode = false }) {
           </div>
         </div>
       )}
+      {/* --- THE BATCH COMMAND CENTER OVERLAY --- */}
+      {selectedBatch && (
+        <BatchCommandCenter 
+          batch={myBatches.find(b => b.id === selectedBatch.id) || selectedBatch} 
+          isDarkMode={isDarkMode} 
+          onClose={() => setSelectedBatch(null)} // This lets the back button work!
+        />
+      )}
     </div>
   );
 }
@@ -407,14 +560,31 @@ function MetricCard({ label, val, icon, color, isDark }) {
   );
 }
 
-function BatchCard({ batch, isDark, canAccess, onDelete, onEdit }) {
+function BatchCard({ batch, isDark, canAccess, onDelete, onEdit, onClick }) {
   const stats = batch.stats || { pdfs: 0, audio: 0, mcqs: 0 };
   const accent = batch.isFree ? "emerald" : "indigo";
+
+  // 🚨 NEW HIERARCHY LOGIC: Separates Lead from Collabs
+  const names = batch.teacherNames || ["Unknown Sensei"];
+  const leadSensei = names[0]; // The first person is the Owner/Lead
+  const collabs = names.slice(1); // Everyone else is a collaborator
+
+  let collabText = "";
+  if (collabs.length > 0) {
+    const visibleCollabs = collabs.slice(0, 2);
+    const extraCount = collabs.length - 2;
+    collabText = visibleCollabs.join(', ') + (extraCount > 0 ? ` & +${extraCount}` : '');
+  }
+
   return (
-    <div className={`group relative p-1 rounded-[3.8rem] transition-all duration-700 cursor-pointer ${canAccess ? 'hover:-translate-y-3' : 'opacity-60'} ${isDark ? 'bg-slate-800 shadow-2xl' : 'bg-slate-200 shadow-xl'} ${batch.isFree ? 'hover:bg-emerald-500' : 'hover:bg-indigo-500'}`}>
+    <div 
+      onClick={onClick} 
+      className={`group relative p-1 rounded-[3.8rem] transition-all duration-700 cursor-pointer ${canAccess ? 'hover:-translate-y-3' : 'opacity-60'} ${isDark ? 'bg-slate-800 shadow-2xl' : 'bg-slate-200 shadow-xl'} ${batch.isFree ? 'hover:bg-emerald-500' : 'hover:bg-indigo-500'}`}
+    >
       
       {canAccess && (
         <div className="absolute -top-3 -right-3 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-500">
+           {/* (Edit and Delete buttons stay the same) */}
            <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-[#0A0F1C] hover:scale-110"><Pencil size={18} /></button>
            <button onClick={onDelete} className="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-[#0A0F1C] hover:scale-110"><Trash2 size={18} /></button>
         </div>
@@ -432,8 +602,24 @@ function BatchCard({ batch, isDark, canAccess, onDelete, onEdit }) {
         </div>
 
         <div className="mb-10 relative z-10">
-          <h3 className={`text-3xl font-black leading-tight tracking-tight mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>{batch.title}</h3>
-          <div className="flex items-center gap-2 text-slate-500"><Users size={14} /><span className="text-[10px] font-bold uppercase tracking-widest truncate">{batch.teacherNames?.join(' & ')}</span></div>
+          <h3 className={`text-3xl font-black leading-tight tracking-tight mb-6 ${isDark ? 'text-white' : 'text-slate-900'}`}>{batch.title}</h3>
+          
+          {/* 🚨 NEW STACKED TEAM UI */}
+          <div className="flex items-start gap-4">
+            <div className={`p-3 rounded-2xl ${isDark ? 'bg-slate-900/50 text-slate-500 border border-slate-800' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+               <Users size={18} />
+            </div>
+            <div className="flex flex-col justify-center py-1">
+              <span className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                Lead: {leadSensei}
+              </span>
+              {collabs.length > 0 && (
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mt-1">
+                  Collabs: {collabText}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center justify-between border-t border-slate-800/50 pt-8 mt-auto relative z-10">
