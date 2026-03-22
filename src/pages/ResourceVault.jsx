@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SecureViewer from './SecureViewer';
+import { createPortal } from 'react-dom'; // 👈 Add this import
 import { 
   Search, X, FileText, Download, Database, FileArchive, PlayCircle,
   RefreshCw, Eye, ShieldAlert, Info, Activity, Zap, 
@@ -230,15 +231,24 @@ const [viewingPdf, setViewingPdf] = useState(null);
 </div>
 
 {/* 🚨 MODAL PLACEMENT (Place this just before the very last </div>) 🚨 */}
-{viewingPdf && (
-  <div className="fixed inset-0 z-[100] bg-black animate-in fade-in duration-300 flex flex-col">
+{viewingPdf && createPortal(
+  <div style={{ 
+      position: 'fixed', 
+      top: 0, 
+      left: 0, 
+      right: 0, 
+      bottom: 0, 
+      zIndex: 2147483647, // 👈 The absolute maximum z-index allowed by browsers
+      backgroundColor: isDarkMode ? '#000000' : 'rgba(0,0,0,0.9)'
+    }} className="animate-in fade-in duration-300 flex flex-col">
     <SecureViewer 
-      fileUrl={viewingPdf.fileUrl} 
+      fileUrl={viewingPdf.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} 
       isDarkMode={isDarkMode} 
       userEmail={currentUser?.email || "Protected Student"}
       onClose={() => setViewingPdf(null)} // 👈 THIS IS THE LINE THAT CLOSES THE VIEWER
     />
-  </div>
+  </div>,
+  document.body
 )}
     </div>
   );

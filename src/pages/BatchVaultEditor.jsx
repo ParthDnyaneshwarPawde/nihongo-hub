@@ -322,7 +322,7 @@ export default function BatchVaultEditor({ batchData, isDarkMode }) {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                  <a href={asset.fileUrl} target="_blank" rel="noreferrer" className={`flex-1 md:flex-none p-4 border rounded-2xl transition-all shadow-inner flex justify-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-500 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-900'}`}><ExternalLink size={20} /></a>
+                  <a href={asset.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} target="_blank" rel="noopener" className={`flex-1 md:flex-none p-4 border rounded-2xl transition-all shadow-inner flex justify-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-500 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-900'}`}><ExternalLink size={20} /></a>
                   <button onClick={() => handleDelete(asset)} className="flex-1 md:flex-none p-4 bg-rose-600/10 border border-rose-600/20 text-rose-500 hover:bg-rose-600 hover:text-white rounded-2xl transition-all shadow-xl hover:shadow-rose-600/30 flex justify-center"><Trash2 size={20} /></button>
                   <div className="hidden sm:block pl-4"><ChevronRight size={18} className={`transition-colors ${isDarkMode ? 'text-slate-900 group-hover:text-rose-600' : 'text-slate-100 group-hover:text-rose-500'}`} /></div>
                 </div>

@@ -5,10 +5,11 @@ import {
   Loader2, ShieldAlert, Lock, LogOut, MousePointer2, Fingerprint, X 
 } from 'lucide-react';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+// pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+//   'pdfjs-dist/build/pdf.worker.min.mjs',
+//   import.meta.url,
+// ).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function SecureViewer({ fileUrl, userEmail = "Authorized Student", isDarkMode, onClose }) {
   const [numPages, setNumPages] = useState(null);
