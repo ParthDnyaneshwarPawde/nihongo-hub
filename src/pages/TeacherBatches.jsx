@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   collection, query, onSnapshot, addDoc, updateDoc,
-  serverTimestamp, getDocs, deleteDoc, doc, where
+  serverTimestamp, getDocs, deleteDoc, doc, where, getDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { 
@@ -26,6 +26,9 @@ export default function TeacherBatches({ isDarkMode = false }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [editingBatchId, setEditingBatchId] = useState(null);
+  const [isCurrentUserLead, setIsCurrentUserLead] = useState(true);
+  const [leadTeacherName, setLeadTeacherName] = useState("");
+  const [myRealName, setMyRealName] = useState("Sensei");
 
   // Form State
   const [newBatch, setNewBatch] = useState({
@@ -113,18 +116,39 @@ export default function TeacherBatches({ isDarkMode = false }) {
   }, [teacherSearch, selectedTeachers]);
 
   useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+    let unsubscribeSnap = () => {}; // Safe cleanup
+
+    const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
       if (!user) { setLoading(false); return; }
+
+      // 🚨 FIX: Fetch their actual name from the database if Google Name is missing
+      let fetchedName = user.displayName;
+      if (!fetchedName) {
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            // Stitches their first and last name together just like the search bar does!
+            fetchedName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+          }
+        } catch (err) { console.error("Name fetch error", err); }
+      }
+      setMyRealName(fetchedName || "Sensei"); // Save the real name to state
+
+      // Continue fetching batches...
       const q = query(collection(db, 'batches'));
-      const unsubscribeSnap = onSnapshot(q, (snapshot) => {
+      unsubscribeSnap = onSnapshot(q, (snapshot) => {
         const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setMyBatches(all.filter(b => b.teacherIds?.includes(user.uid)));
         setOtherBatches(all.filter(b => !b.teacherIds?.includes(user.uid)));
         setLoading(false);
       }, () => setLoading(false));
-      return () => unsubscribeSnap();
     });
-    return () => unsubscribeAuth();
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeSnap(); 
+    };
   }, []);
 
   const totalAssets = myBatches.reduce((acc, b) => {
@@ -139,6 +163,13 @@ export default function TeacherBatches({ isDarkMode = false }) {
 
   const openEditModal = (batch) => {
     setEditingBatchId(batch.id);
+    
+    // 🚨 NEW PERMISSION CHECK: Are they the original creator?
+    const leadId = batch.teacherIds?.[0];
+    const leadName = batch.teacherNames?.[0] || "Unknown Sensei";
+    setIsCurrentUserLead(leadId === auth.currentUser?.uid);
+    setLeadTeacherName(leadName);
+
     setNewBatch({
       title: batch.title,
       level: batch.level,
@@ -152,11 +183,11 @@ export default function TeacherBatches({ isDarkMode = false }) {
     setKeyPoints(batch.keyPoints || []);
     setAddedCoupons(batch.coupons || []);
     
-    // 🚨 3. Load existing collaborators into the UI (Excluding yourself so you don't show up twice in the pill list)
     if (batch.teacherIds && batch.teacherNames) {
       const existingCollabs = [];
       batch.teacherIds.forEach((id, index) => {
-        if (id !== auth.currentUser?.uid) {
+        // Exclude the Lead Teacher from the removable pill list
+        if (id !== leadId) {
           existingCollabs.push({
             uid: id,
             displayName: batch.teacherNames[index] || "Unknown Sensei"
@@ -179,7 +210,17 @@ export default function TeacherBatches({ isDarkMode = false }) {
     // 🚨 1. Smart merge: Always keep the creator (you), and add the selected collaborators
     // We use Set to prevent accidental duplicates
     const finalTeacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
-    const finalTeacherNames = [...new Set([user.displayName || "Sensei", ...selectedTeachers.map(t => t.displayName)])];
+    // This uses the name we fetched from the 'users' collection in Step 3 earlier
+// const finalTeacherNames = [...new Set([myRealName, ...selectedTeachers.map(t => t.displayName)])];
+
+// 1. Pick the right Lead Name: If editing, keep the original. If new, use your real name.
+const actualLeadName = editingBatchId ? leadTeacherName : myRealName;
+
+// 2. Build the name list (Lead always goes first)
+const finalTeacherNames = [...new Set([actualLeadName, ...selectedTeachers.map(t => t.displayName)])];
+
+// 3. Attach to the batch data
+batchData.teacherNames = finalTeacherNames;
 
     const batchData = {
       ...newBatch,
@@ -191,6 +232,13 @@ export default function TeacherBatches({ isDarkMode = false }) {
       teacherNames: finalTeacherNames,
       updatedAt: serverTimestamp(),
     };
+
+    // 🚨 FIX: Only update the collaborators array if the REAL LEAD is saving it.
+    // If a co-teacher saves, this protects the original owner!
+    if (!editingBatchId || isCurrentUserLead) {
+      batchData.teacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
+      batchData.teacherNames = [...new Set([myRealName, ...selectedTeachers.map(t => t.displayName)])];
+    }
 
     // Clean undefined for Firestore
     Object.keys(batchData).forEach(key => batchData[key] === undefined && delete batchData[key]);
@@ -304,6 +352,7 @@ export default function TeacherBatches({ isDarkMode = false }) {
                   onClick={() => setSelectedBatch(b)}
                   isDark={isDarkMode} 
                   canAccess={true} 
+                  isLead={b.teacherIds?.[0] === auth.currentUser?.uid}
                   onEdit={() => openEditModal(b)} 
                   onDelete={(e) => {
                     e.stopPropagation();
@@ -417,6 +466,9 @@ export default function TeacherBatches({ isDarkMode = false }) {
                   <div className="space-y-8 flex flex-col">
                     <label className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] ml-2">Collaborators</label>
                     <div className="flex-1 bg-slate-950/50 p-10 rounded-[3rem] border border-slate-800 shadow-inner flex flex-col space-y-6">
+                    {/* 🚨 STEP 5 FIX: ONLY SHOW SEARCH BAR TO THE LEAD TEACHER */}
+                      {isCurrentUserLead && (
+                        <>
    <div className="flex gap-2">
       <input 
         value={teacherSearch} 
@@ -456,17 +508,20 @@ export default function TeacherBatches({ isDarkMode = false }) {
           </div>
         ))
       )}
-   </div>
+   </div></>
+   )}
    
    {/* --- SELECTED COLLABORATORS --- */}
    <div className="pt-6 border-t border-slate-800 flex flex-wrap gap-3">
      <span className="bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest flex items-center gap-2">
-       <Shield size={12}/> Verified Lead (You)
+       <Shield size={12}/> Verified Lead ({isCurrentUserLead ? "You" : leadTeacherName})
      </span>
      {selectedTeachers.map(t => (
        <span key={t.uid} className="bg-slate-800 text-white border border-slate-700 text-[10px] font-black px-4 py-2 rounded-full uppercase tracking-widest flex items-center gap-2">
-         {t.displayName}
-         <X size={12} className="cursor-pointer hover:text-rose-500 transition-colors" onClick={() => setSelectedTeachers(selectedTeachers.filter(st => st.uid !== t.uid))} />
+         {t.uid === auth.currentUser?.uid ? "You" : t.displayName}
+         {isCurrentUserLead && (
+           <X size={12} className="cursor-pointer hover:text-rose-500 transition-colors" onClick={() => setSelectedTeachers(selectedTeachers.filter(st => st.uid !== t.uid))} />
+         )}
        </span>
      ))}
    </div>
@@ -560,14 +615,26 @@ function MetricCard({ label, val, icon, color, isDark }) {
   );
 }
 
-function BatchCard({ batch, isDark, canAccess, onDelete, onEdit, onClick }) {
+function BatchCard({ batch, isDark, canAccess, onDelete, onEdit, onClick, isLead }) {
+
+  const names = batch.teacherNames || ["Unknown Sensei"];
+  const ids = batch.teacherIds || [];
+  const myUid = auth.currentUser?.uid;
+
+  // If the Lead ID is mine, show "You". Otherwise show their name.
+  const leadSensei = ids[0] === myUid ? "You" : names[0];
+
+  // Map through collaborators: if one is me, swap name for "You"
+  const collabs = names.slice(1).map((name, index) => 
+    ids[index + 1] === myUid ? "You" : name
+  );
   const stats = batch.stats || { pdfs: 0, audio: 0, mcqs: 0 };
   const accent = batch.isFree ? "emerald" : "indigo";
 
   // 🚨 NEW HIERARCHY LOGIC: Separates Lead from Collabs
-  const names = batch.teacherNames || ["Unknown Sensei"];
-  const leadSensei = names[0]; // The first person is the Owner/Lead
-  const collabs = names.slice(1); // Everyone else is a collaborator
+  // const names = batch.teacherNames || ["Unknown Sensei"];
+  // const leadSensei = names[0]; // The first person is the Owner/Lead
+  // const collabs = names.slice(1); // Everyone else is a collaborator
 
   let collabText = "";
   if (collabs.length > 0) {
@@ -586,7 +653,10 @@ function BatchCard({ batch, isDark, canAccess, onDelete, onEdit, onClick }) {
         <div className="absolute -top-3 -right-3 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-500">
            {/* (Edit and Delete buttons stay the same) */}
            <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-[#0A0F1C] hover:scale-110"><Pencil size={18} /></button>
-           <button onClick={onDelete} className="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-[#0A0F1C] hover:scale-110"><Trash2 size={18} /></button>
+           {/* 🚨 HIDE THE TRASH CAN IF THEY ARE NOT THE LEAD */}
+           {isLead && (
+             <button onClick={onDelete} className="w-12 h-12 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-2xl border-4 border-[#0A0F1C] hover:scale-110"><Trash2 size={18} /></button>
+           )}
         </div>
       )}
 

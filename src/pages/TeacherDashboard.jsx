@@ -34,6 +34,8 @@ const [tempClassID, setTempClassID] = useState(null);
   // const [tempClassData, setTempClassData] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [myUpcomingClasses, setMyUpcomingClasses] = useState([]);
+  const [isCurrentUserLead, setIsCurrentUserLead] = useState(true);
+  const [leadTeacherName, setLeadTeacherName] = useState("");
 
 useEffect(() => {
   // Simple query: only filter by status
@@ -74,32 +76,37 @@ useEffect(() => {
   };
 
   useEffect(() => {
+    // 🚨 1. Wait until we know WHO is logged in before checking the database
+    if (!currentUser) return; 
     if (step === 'password') return;
-  // 1. Look for any class that is currently 'live'
-  const q = query(collection(db, "classes"), where("status", "==", "live"), limit(1));
 
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    if (!snapshot.empty) {
-      const liveDoc = snapshot.docs[0];
-      const data = liveDoc.data();
-      
-      // 2. Re-populate the states so the Red Button appears
-      setCurrentSessionId(liveDoc.id);
-      setTempClassData(data);
-      setActiveRoomCode(data.roomID);
-      setIsLive(true);
-      setStep('selection');
-    } else {
-      // 3. If no live class exists, reset to the "Start Session" view
-      setIsLive(false);
-      setCurrentSessionId(null);
-    }
-  });
+    // 🚨 2. THE FIX: Add the 'hostId' filter. 
+    // Now it ONLY looks for live classes created by THIS specific teacher.
+    const q = query(
+      collection(db, "classes"), 
+      where("status", "==", "live"), 
+      where("hostId", "==", currentUser.uid), // <-- THE MAGIC LINE
+      limit(1)
+    );
 
-  
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const liveDoc = snapshot.docs[0];
+        const data = liveDoc.data();
+        
+        setCurrentSessionId(liveDoc.id);
+        setTempClassData(data);
+        setActiveRoomCode(data.roomID);
+        setIsLive(true);
+        setStep('selection');
+      } else {
+        setIsLive(false);
+        setCurrentSessionId(null);
+      }
+    });
 
-  return () => unsubscribe();
-}, []);
+    return () => unsubscribe();
+  }, [currentUser, step]); // <-- Make sure currentUser is in the dependency array
 
 
 // 2. The missing function (put this near your other handle functions)
@@ -217,15 +224,20 @@ const broadcastBulletin = async () => {
       const classRef = doc(db, "classes", tempClassID);
       const roomCode = tempClassData.roomID;
       const batchLevel = tempClassData.level;
+      const now = new Date();
+      const istTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000))
+        .toISOString()
+        .slice(0, 16);
       
       await updateDoc(classRef, {
         code: roomCode,
-        password: roomPassword, 
+        password: roomPassword || "", 
         type: activeType,
         teacher: currentUser?.displayName || "Sensei",
         status: 'live',
         batchLevel: batchLevel,
         createdAt: serverTimestamp(),
+        scheduledTime: istTime,
         studentsJoined: 0
       });
 
@@ -899,6 +911,7 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName, isDarkM
                 ${(isSaving || dynamicBatches.length === 0) ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 active:scale-95'}`}
             >
               {isSaving ? <><Loader2 className="animate-spin" size={20} /> SECURING...</> : "Continue to Password"}
+              
             </button>
           </div>
         </form>

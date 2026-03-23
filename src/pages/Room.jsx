@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ZegoUIKitPrebuilt } from '@zegocloud/zego-uikit-prebuilt';
 import { auth } from '../firebase';
 import { X, ShieldCheck } from 'lucide-react';
+
 // At the top of Room.jsx
 import { useLocation } from 'react-router-dom';
 

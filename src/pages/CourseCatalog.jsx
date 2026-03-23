@@ -157,16 +157,22 @@ const filteredBatches = useMemo(() => {
     }
   };
 
- const handleFinalEnrollment = async () => {
-    // If course is free, allow self-enrollment immediately AND sync to Roster
-    if (activeCourse.isFree) {
+const handleFinalEnrollment = async () => {
+    const finalPrice = calculatePrice();
+    
+    // 🚨 UPDATED LOGIC: If course is free OR price became 0 via coupon
+    if (activeCourse.isFree || finalPrice === 0) {
        setIsProcessing(true);
        try {
-         // 1. Give the student access in their profile
          const userRef = doc(db, "users", auth.currentUser.uid);
-         await updateDoc(userRef, { enrolledCourses: arrayUnion(activeCourse.title) });
+         
+         // Give the student access in their profile (Sync both Title and ID)
+         await updateDoc(userRef, { 
+           enrolledCourses: arrayUnion(activeCourse.title),
+           enrolledCourseIds: arrayUnion(activeCourse.id) // 🚨 Ensure IDs are synced too
+         });
 
-         // 2. 🚨 NEW: Create an auto-approved record for the Teacher's Roster!
+         // Create/Update the record for the Teacher's Roster (in case not created in step 1)
          const requestRef = doc(db, "enrollmentRequests", `${auth.currentUser.uid}_${activeCourse.id}`);
          await setDoc(requestRef, {
            studentUid: auth.currentUser.uid,
@@ -175,27 +181,26 @@ const filteredBatches = useMemo(() => {
            courseId: activeCourse.id,
            courseTitle: activeCourse.title,
            courseLevel: activeCourse.level,
-           orderRef: "FREE_ACCESS",
+           orderRef: activeCourse.isFree ? "FREE_ACCESS" : "COUPON_100",
            amountDue: 0,
-           status: 'APPROVED', // Immediately moves them to the 'Active Students' tab
+           status: 'APPROVED', 
            timestamp: new Date().toISOString(),
-           joinedAt: new Date().toLocaleDateString(), // Adds the timestamp for the UI
-           appliedCoupon: null
-         });
+           joinedAt: new Date().toLocaleDateString(),
+           appliedCoupon: appliedCoupon ? appliedCoupon.code : null
+         }, { merge: true });
 
-         alert("🎉 Free Access Granted!");
+         alert("🎉 Mastery Granted! Your course is now unlocked.");
          navigate('/student-dashboard');
        } catch (e) {
          console.error(e);
-         alert("Error joining free course.");
+         alert("Error joining course.");
        } finally {
          setIsProcessing(false);
        }
        return;
     }
 
-    // For PAID courses, this button now just closes the modal 
-    // because they are waiting for teacher approval
+    // For PAID courses that are still > 0, just close and wait for teacher
     alert("Request Sent! Once Sensei verifies your payment, the course will appear in your dashboard.");
     closeModals();
     navigate('/student-dashboard');
@@ -221,9 +226,10 @@ const filteredBatches = useMemo(() => {
   const handleConfirmationAccept = async () => {
     setIsProcessing(true);
     const finalPrice = calculatePrice();
+    const isAutoApproved = finalPrice === 0; // 🚨 Check if it's free now
     
     try {
-      // 🚨 NEW: Create the Enrollment Request for the Teacher Roster
+      // Create the Enrollment Request for the Teacher Roster
       const requestRef = doc(db, "enrollmentRequests", `${auth.currentUser.uid}_${activeCourse.id}`);
       
       await setDoc(requestRef, {
@@ -233,10 +239,11 @@ const filteredBatches = useMemo(() => {
         courseId: activeCourse.id,
         courseTitle: activeCourse.title,
         courseLevel: activeCourse.level,
-        orderRef: orderReference,
+        orderRef: isAutoApproved ? "COUPON_FREE" : orderReference, // 🚨 Custom ref for free
         amountDue: finalPrice,
-        status: 'PENDING', // Options: PENDING, APPROVED, REJECTED
+        status: isAutoApproved ? 'APPROVED' : 'PENDING', // 🚨 AUTO-APPROVE IF 0
         timestamp: new Date().toISOString(),
+        joinedAt: isAutoApproved ? new Date().toLocaleDateString() : null, // 🚨 Set join date
         appliedCoupon: appliedCoupon ? appliedCoupon.code : null
       });
 
@@ -247,8 +254,8 @@ const filteredBatches = useMemo(() => {
 
       setIsProcessing(false);
       
-      // If price is 0, we can show success, otherwise show UPI checkout
-      if (finalPrice === 0) {
+      // Route to Success if 0, otherwise show UPI Checkout
+      if (isAutoApproved) {
         setActiveView('SUCCESS'); 
       } else {
         setActiveView('CHECKOUT');

@@ -10,6 +10,7 @@ import { collection, query, where, onSnapshot, limit, orderBy, doc, getDoc, upda
 import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import ResourceVault from './ResourceVault';
+import CalendarPage from './CalendarPage';
 
 export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState('learn');
@@ -55,6 +56,27 @@ const [dynamicBatches, setDynamicBatches] = useState([]);
 
 const [enrolledCourseTitles, setEnrolledCourseTitles] = useState([]);
 const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+// Add this new state variable at the top with your other states
+  const [allLevelClasses, setAllLevelClasses] = useState([]);
+
+  useEffect(() => {
+    if (!level) return; 
+
+    // NO FILTER FOR STATUS - we want everything!
+    const q = query(
+      collection(db, "classes"), 
+      where("level", "==", level) 
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllLevelClasses(fetched); // All classes for the calendar
+      setUpcomingClasses(fetched.filter(c => c.status === 'upcoming' || c.status === 'live')); // Just upcoming for dashboard
+    });
+    
+    return () => unsubscribe();
+  }, [level]);
 
 useEffect(() => {
   const fetchStudentAccess = async () => {
@@ -657,7 +679,7 @@ useEffect(() => {
       <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Live Academy</h3>
       <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Upcoming Sessions</h2>
     </div>
-    <button className="text-sm font-black text-indigo-600 flex items-center gap-1 hover:gap-2 transition-all">
+    <button className="text-sm font-black text-indigo-600 flex items-center gap-1 hover:gap-2 transition-all" onClick={() => setActiveTab("calendar")}>
       View Calendar <ChevronRight size={18}/>
     </button>
   </div>
@@ -881,6 +903,23 @@ useEffect(() => {
               <p className="text-slate-500 font-bold uppercase text-[8px] tracking-[0.4em] mt-2">Coming Soon...</p>
             </div>
           )}
+
+          {/* TAB 4: CALENDAR PAGE */}
+{/* TAB 4: CALENDAR PAGE */}
+{activeTab === 'calendar' && (
+  <CalendarPage 
+    level={level}
+    classes={allLevelClasses}
+    isDarkMode={isDarkMode}
+    onBack={() => handleTabClick('learn')} // 🚨 This makes the Back to Dojo button work!
+    onLiveClick={(cls) => {
+      setSelectedClass(cls);
+      setIsPasswordModalOpen(true);
+      setEnteredPassword("");
+      setPasswordError("");
+    }}
+  />
+)}
           
           {/* 🚨 TAB LOGIC END 🚨 */}
 
