@@ -8,6 +8,7 @@ import {
   FileText, Globe, Layers, Plus, Search, RotateCw, X, Shield, Lock, Unlock 
 } from 'lucide-react';
 import { auth, db } from '@services/firebase';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 
 // Hooks
 import { useTeacherBatches } from '@features/teacher/TeacherDashboard/TeacherBatches/hooks/useTeacherBatches';
@@ -21,6 +22,7 @@ import BatchCard from '@features/teacher/TeacherDashboard/TeacherBatches/compone
 import StepOne from '@features/teacher/TeacherDashboard/TeacherBatches/components/BatchModal/StepOne';
 import StepTwo from '@features/teacher/TeacherDashboard/TeacherBatches/components/BatchModal/StepTwo';
 import InviteSection from '@features/teacher/TeacherDashboard/TeacherBatches/components/InviteSection';
+import BackgroundCanvas from '@features/teacher/TeacherDashboard/TeacherBatches/components/BackgroundCanvas';
 
 // Shared Components
 import MetricCard from '@components/shared/MetricCard';
@@ -249,13 +251,12 @@ const handleSaveBatch = async (e) => {
   if (loading) return <div className="h-screen flex items-center justify-center font-black text-indigo-500 animate-pulse text-xl">ACCESSING THE VAULT...</div>;
 
   return (
-    <div className={`h-full overflow-y-auto premium-scroll relative font-sans transition-colors duration-500 ${isDarkMode ? 'bg-[#0A0F1C] text-slate-200' : 'bg-[#F8FAFC] text-slate-900'}`}>
+    <LayoutGroup>
+      <div className={`h-full overflow-y-auto premium-scroll relative font-sans transition-colors duration-500 ${isDarkMode ? 'bg-[#0A0F1C] text-slate-200' : 'bg-[#F8FAFC] text-slate-900'}`}>
       
-      {/* 🔮 PREMIUM BACKGROUND ELEMENTS */}
+      {/* 🔮 PREMIUM WEBGL KANJI ENVIRONMENT */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 blur-[120px] pointer-events-none rounded-full" />
-      <div className={`fixed right-[-2%] bottom-[5%] text-[450px] font-black select-none pointer-events-none z-0 transition-opacity duration-1000 ${isDarkMode ? 'text-white opacity-[0.015]' : 'text-slate-900 opacity-[0.02]'}`}>
-        武
-      </div>
+      <BackgroundCanvas isDarkMode={isDarkMode} />
 
       <div className="relative z-10 p-6 lg:p-10 space-y-12 max-w-[1500px] mx-auto">
 
@@ -282,10 +283,14 @@ const handleSaveBatch = async (e) => {
             <p className="text-slate-500 font-medium text-base max-w-xl leading-relaxed">Manage your premium course products, set limited-time coupons, and architect your student's learning journey.</p>
           </div>
 
-          <button onClick={() => setIsCreateModalOpen(true)} className="group bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 px-10 rounded-[2rem] shadow-2xl shadow-indigo-600/30 flex items-center gap-4 transition-all active:scale-95">
+          <motion.button 
+            whileHover={{ scale: 1.05, y: -2 }}
+            whileTap={{ scale: 0.95, filter: 'brightness(1.2)' }}
+            onClick={() => setIsCreateModalOpen(true)} className="group bg-indigo-600 outline-none hover:bg-indigo-500 text-white font-black py-5 px-10 rounded-[2rem] shadow-2xl shadow-indigo-600/30 flex items-center gap-4 transition-colors"
+          >
             <Plus size={24}/>
             CREATE BATCH
-          </button>
+          </motion.button>
         </header>
 
         {/* --- PENDING REQUESTS --- */}
@@ -335,51 +340,69 @@ const handleSaveBatch = async (e) => {
             <div className="h-8 w-px bg-slate-800 mx-2" />
             <div className="flex gap-1 p-1 bg-slate-950/30 rounded-xl">
               {['All', 'Premium', 'Free'].map(f => (
-                <button key={f} onClick={() => setActiveFilter(f)} className={`px-8 py-2.5 rounded-lg text-[10px] font-black uppercase transition-all ${activeFilter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>{f}</button>
+                <motion.button 
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  key={f} onClick={() => setActiveFilter(f)} className={`px-8 py-2.5 rounded-lg text-[10px] font-black uppercase transition-colors outline-none ${activeFilter === f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>{f}</motion.button>
               ))}
             </div>
           </div>
         </section>
 
         {/* --- GRID --- */}
-        <section className="space-y-16 pb-24">
-          <div>
-            <h2 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.5em] mb-10 flex items-center gap-4">
-               <Unlock size={14} /> My Managed Courses
-               <div className="h-px flex-1 bg-indigo-500/20" />
-            </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              {filterList(myBatches).map(b => (
-                <BatchCard 
-                  key={b.id} 
-                  batch={b} 
-                  onClick={() => setSelectedBatch(b)}
-                  isDark={isDarkMode} 
-                  canAccess={true} 
-                  isLead={b.teacherIds?.[0] === auth.currentUser?.uid}
-                  onEdit={() => openEditModal(b)} 
-                  onDelete={(e) => handleDelete(e, b)} 
-                />
-              ))}
-            </div>
-            {myBatches.length === 0 && (
-              <div className="py-24 text-center border-2 border-dashed border-slate-800/50 rounded-[4rem] text-slate-500 font-bold uppercase tracking-[0.2em] text-sm">
-                Vault Empty. Generate your first course.
+        <section className="pb-24">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeFilter}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+              variants={{
+                hidden: { opacity: 0, scale: 0.9, filter: 'blur(10px)' },
+                show: { opacity: 1, scale: 1, filter: 'blur(0px)', transition: { staggerChildren: 0.1, type: "spring", bounce: 0.4 } },
+                exit: { opacity: 0, scale: 0.9, filter: 'blur(10px)', transition: { duration: 0.2 } }
+              }}
+              className="space-y-16"
+            >
+              <div>
+                <h2 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.5em] mb-10 flex items-center gap-4">
+                   <Unlock size={14} /> My Managed Courses
+                   <div className="h-px flex-1 bg-indigo-500/20" />
+                </h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                  {filterList(myBatches).map(b => (
+                    <BatchCard 
+                      key={b.id} 
+                      batch={b} 
+                      onClick={() => setSelectedBatch(b)}
+                      isDark={isDarkMode} 
+                      canAccess={true} 
+                      isLead={b.teacherIds?.[0] === auth.currentUser?.uid}
+                      onEdit={() => openEditModal(b)} 
+                      onDelete={(e) => handleDelete(e, b)} 
+                    />
+                  ))}
+                </div>
+                {myBatches.length === 0 && (
+                  <div className="py-24 text-center border-2 border-dashed border-slate-800/50 rounded-[4rem] text-slate-500 font-bold uppercase tracking-[0.2em] text-sm">
+                    Vault Empty. Generate your first course.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="opacity-40 hover:opacity-100 transition-all duration-700 grayscale brightness-75">
-            <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mb-10 flex items-center gap-4">
-               <Lock size={14} /> Academy Database
-               <div className="h-px flex-1 bg-slate-800/30" />
-            </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              {filterList(otherBatches).map(b => (
-                <BatchCard key={b.id} batch={b} isDark={isDarkMode} canAccess={false} />
-              ))}
-            </div>
-          </div>
+              <div className="opacity-40 hover:opacity-100 transition-opacity duration-700 grayscale brightness-75">
+                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mb-10 flex items-center gap-4">
+                   <Lock size={14} /> Academy Database
+                   <div className="h-px flex-1 bg-slate-800/30" />
+                </h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                  {filterList(otherBatches).map(b => (
+                    <BatchCard key={b.id} batch={b} isDark={isDarkMode} canAccess={false} />
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </section>
       </div>
 
@@ -440,5 +463,6 @@ const handleSaveBatch = async (e) => {
         />
       )}
     </div>
+    </LayoutGroup>
   );
 }

@@ -1,10 +1,24 @@
 import React from 'react';
 import { Bell, Sparkles } from 'lucide-react';
 import InviteCard from './InviteCard';
+import { motion } from 'framer-motion';
 
 export default function InviteSection({ invites, onAccept, onReject, isDark }) {
   // Only render if there are actually pending invites
   if (!invites || invites.length === 0) return null;
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, scale: 0.9 },
+    show: { opacity: 1, scale: 1, transition: { type: "spring" } }
+  };
 
   return (
     <section className="mb-16 animate-in fade-in slide-in-from-top-6 duration-1000">
@@ -34,17 +48,18 @@ export default function InviteSection({ invites, onAccept, onReject, isDark }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <motion.div variants={containerVariants} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {invites.map((invite) => (
-          <InviteCard 
-            key={invite.id} 
-            invite={invite} 
-            onAccept={() => onAccept(invite)} 
-            onReject={() => onReject(invite.id)}
-            isDark={isDark} 
-          />
+          <motion.div variants={itemVariants} layout key={invite.id}>
+            <InviteCard 
+              invite={invite} 
+              onAccept={() => onAccept(invite)} 
+              onReject={() => onReject(invite.id)}
+              isDark={isDark} 
+            />
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </section>
   );
 }
