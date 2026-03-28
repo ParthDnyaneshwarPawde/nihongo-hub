@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db, provider } from '../firebase';
+import { auth, db, provider } from '@services/firebase';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {

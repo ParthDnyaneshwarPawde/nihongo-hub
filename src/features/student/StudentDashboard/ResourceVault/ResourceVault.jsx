@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import SecureViewer from './SecureViewer';
+import SecureViewer from '@components/shared/SecureViewer';
 import { createPortal } from 'react-dom'; // 👈 Add this import
 import { 
   Search, X, FileText, Download, Database, FileArchive, PlayCircle,
@@ -7,7 +7,7 @@ import {
   ArrowRight, Layers, CheckCircle2, User, Clock, Lock
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '@services/firebase';
 import { useNavigate } from 'react-router-dom';
 
 export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolledCourseTitles = [], currentUser }) {

@@ -6,7 +6,7 @@ import { Calendar, Clock, Eye, EyeOff, Video, Mic, ArrowRight, ShieldCheck, Lock
 import { getAuth } from 'firebase/auth';
 // import { updatePassword } from 'firebase/auth';
 import { serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../firebase'; 
+import { auth, db } from '@services/firebase'; 
 import { doc, setDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth'; // 👈 Add this
 import { signOut } from 'firebase/auth'; // 👈 Added signOut here

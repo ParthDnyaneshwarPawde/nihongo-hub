@@ -3,14 +3,14 @@ import {
   collection, query, onSnapshot, addDoc, updateDoc,
   serverTimestamp, getDocs, deleteDoc, doc, where, getDoc
 } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth } from '@services/firebase';
 import { 
   BookOpen, FileText, Mic2, HelpCircle, Users, ChevronRight, Plus, FolderOpen, 
   X, Loader2, Search, Filter, Sparkles, Shield, Copy, Check, DollarSign, 
   Globe, Lock, Unlock, Tag, Activity, Trash2, Zap, Layers, Image as ImageIcon,
   ListChecks, Layout, FileUp, ArrowRight, ArrowLeft, RotateCw, Pencil
 } from 'lucide-react';
-import BatchCommandCenter from './BatchCommandCenter';
+import BatchCommandCenter from '@features/teacher/TeacherDashboard/TeacherBatches/BatchCommandCenter';
 
 export default function TeacherBatches({ isDarkMode = false }) {
   const [myBatches, setMyBatches] = useState([]);
@@ -207,43 +207,39 @@ export default function TeacherBatches({ isDarkMode = false }) {
     setIsSaving(true);
     const user = auth.currentUser;
     
-    // 🚨 1. Smart merge: Always keep the creator (you), and add the selected collaborators
-    // We use Set to prevent accidental duplicates
-    const finalTeacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
-    // This uses the name we fetched from the 'users' collection in Step 3 earlier
-// const finalTeacherNames = [...new Set([myRealName, ...selectedTeachers.map(t => t.displayName)])];
-
-// 1. Pick the right Lead Name: If editing, keep the original. If new, use your real name.
-const actualLeadName = editingBatchId ? leadTeacherName : myRealName;
-
-// 2. Build the name list (Lead always goes first)
-const finalTeacherNames = [...new Set([actualLeadName, ...selectedTeachers.map(t => t.displayName)])];
-
-// 3. Attach to the batch data
-batchData.teacherNames = finalTeacherNames;
-
-    const batchData = {
-      ...newBatch,
-      price: newBatch.isFree ? 0 : parseFloat(newBatch.price),
-      keyPoints,
-      coupons: addedCoupons.map(c => ({ ...c, usedCount: c.usedCount || 0 })),
-      // 🚨 2. We removed the "undefined" block. It now ALWAYS saves the teachers!
-      teacherIds: finalTeacherIds,
-      teacherNames: finalTeacherNames,
-      updatedAt: serverTimestamp(),
-    };
-
-    // 🚨 FIX: Only update the collaborators array if the REAL LEAD is saving it.
-    // If a co-teacher saves, this protects the original owner!
-    if (!editingBatchId || isCurrentUserLead) {
-      batchData.teacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
-      batchData.teacherNames = [...new Set([myRealName, ...selectedTeachers.map(t => t.displayName)])];
+    if (!user) {
+      alert("Authentication error. Please refresh.");
+      setIsSaving(false);
+      return;
     }
 
-    // Clean undefined for Firestore
-    Object.keys(batchData).forEach(key => batchData[key] === undefined && delete batchData[key]);
-
     try {
+      // 1. Prepare the Lead and Collaborator lists
+      // If editing, keep the original creator's name. If new, use your fetched real name.
+      const actualLeadName = editingBatchId ? leadTeacherName : myRealName;
+      
+      const finalTeacherIds = [...new Set([user.uid, ...selectedTeachers.map(t => t.uid)])];
+      const finalTeacherNames = [...new Set([actualLeadName, ...selectedTeachers.map(t => t.displayName)])];
+
+      // 2. Build the data object
+      const batchData = {
+        ...newBatch,
+        price: newBatch.isFree ? 0 : parseFloat(newBatch.price),
+        keyPoints,
+        coupons: addedCoupons.map(c => ({ ...c, usedCount: c.usedCount || 0 })),
+        teacherIds: finalTeacherIds,
+        teacherNames: finalTeacherNames,
+        updatedAt: serverTimestamp(),
+      };
+
+      // 3. Permission Protection (MNC Level Logic)
+      // If a collaborator is editing, don't let them overwrite the Lead's ownership arrays
+      if (editingBatchId && !isCurrentUserLead) {
+        delete batchData.teacherIds;
+        delete batchData.teacherNames;
+      }
+
+      // 4. Firestore Operation
       if (editingBatchId) {
         await updateDoc(doc(db, 'batches', editingBatchId), batchData);
       } else {
@@ -253,9 +249,14 @@ batchData.teacherNames = finalTeacherNames;
           createdAt: serverTimestamp(),
         });
       }
+
       closeModal();
-    } catch (err) { console.error("Save Error:", err); }
-    setIsSaving(false);
+    } catch (err) {
+      console.error("Save Error:", err);
+      alert("Vault access denied or system error.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const closeModal = () => {

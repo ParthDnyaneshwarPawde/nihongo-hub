@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase';
+import { auth, db } from '@services/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { X, ChevronRight, Video, Users, Loader2, ShieldAlert, Lock, ArrowRight, Key, Crown, ShieldCheck, Radio } from 'lucide-react';
-import AnimatedKanji from './AnimatedKanji';
+import AnimatedKanji from '@components/shared/AnimatedKanji';
 
 export default function LiveClassrooms({ isDarkMode }) {
   const [liveSessions, setLiveSessions] = useState([]);

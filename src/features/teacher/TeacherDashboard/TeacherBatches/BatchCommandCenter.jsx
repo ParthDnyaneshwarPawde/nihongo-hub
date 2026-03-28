@@ -4,9 +4,9 @@ import { getAuth } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
 // 🚨 IMPORT YOUR TWO NEW FUNCTIONAL COMPONENTS HERE:
 // Make sure BatchVaultEditor.jsx and BatchRoster.jsx are saved in the same folder!
-import BatchVaultEditor from './BatchVaultEditor'; 
-import BatchRoster from './BatchRoster';    
-import BatchSettings from './BatchSettings';           
+import BatchVaultEditor from '@features/teacher/TeacherDashboard/TeacherBatches/BatchVaultEditor'; 
+import BatchRoster from '@features/teacher/TeacherDashboard/TeacherBatches/BatchRoster';    
+import BatchSettings from '@features/teacher/TeacherDashboard/TeacherBatches/BatchSettings';           
 
 export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
   // We default to VAULT so you can see it immediately when it opens

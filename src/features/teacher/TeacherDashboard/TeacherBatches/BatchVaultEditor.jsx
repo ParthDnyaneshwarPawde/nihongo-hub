@@ -8,7 +8,7 @@ import {
   ShieldAlert, Activity, User, Zap, MousePointer2
 } from 'lucide-react';
 import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '@services/firebase';
 import { getAuth } from 'firebase/auth';
 
 /**

@@ -5,7 +5,7 @@ import {
 
 // 🚨 1. IMPORT FIREBASE DEPS
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase'; 
+import { db } from '@services/firebase'; 
 
 export default function BatchSettings({ batchData, isDarkMode }) {
   // Local state initialized from Firebase data

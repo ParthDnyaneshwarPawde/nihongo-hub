@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, limit, onSnapshot, orderBy, deleteDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { db, auth } from '../firebase';
+import { db, auth } from '@services/firebase';
 import { 
   Video, Mic2, Tv, X, Zap, Loader2, Shield, Send, Search, Bell, Settings, LogOut,
   Users, Calendar, BookOpen, ShieldCheck, Filter, Plus, MoreHorizontal, BarChart3, 
   Menu, Clock, ChevronRight // <--- ADD THIS HERE
 } from 'lucide-react';
-import LiveClassrooms from './LiveClassrooms';
-import TeacherBatches from './TeacherBatches';
+import LiveClassrooms from '@features/teacher/TeacherDashboard/LiveClassrooms/LiveClassrooms';
+import TeacherBatches from '@features/teacher/TeacherDashboard/TeacherBatches/TeacherBatches';
+
+// Add this to your imports at the top of TeacherDashboard.jsx
+import InviteSection from '@features/teacher/TeacherDashboard/TeacherBatches/components/InviteSection';
+import { batchService } from '@features/teacher/TeacherDashboard/TeacherBatches/services/batchService';
+import { useTeacherBatches } from '@features/teacher/TeacherDashboard/TeacherBatches/hooks/useTeacherBatches';
 
 export default function TeacherDashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -37,6 +42,30 @@ const [tempClassID, setTempClassID] = useState(null);
   const [isCurrentUserLead, setIsCurrentUserLead] = useState(true);
   const [leadTeacherName, setLeadTeacherName] = useState("");
 
+  // 1. Add this hook call at the top of your component
+const { pendingInvites, myRealName } = useTeacherBatches(); 
+
+// 2. Create a "Wrapper" function to handle the 4 required arguments
+const handleAcceptInvite = async (invite) => {
+  console.log("📩 Accepting Invite Object:", invite); // 🚨 CHECK THIS IN CONSOLE
+  
+  if (!invite.batchId) {
+    alert("This is an old, broken invite. Please delete it and send a new one.");
+    return;
+  }
+
+  try {
+    await batchService.acceptCollabRequest(
+      invite.id, 
+      invite.batchId, 
+      auth.currentUser?.uid, 
+      myRealName || "Sensei"
+    );
+    alert("Collaboration Started! 🤝");
+  } catch (err) {
+    console.error("🔥 Accept Error:", err);
+  }
+};
 useEffect(() => {
   // Simple query: only filter by status
   const q = query(
@@ -427,9 +456,20 @@ const broadcastBulletin = async () => {
           </div>
         </header>
 
+        
+
         <div className="flex-1 overflow-y-auto h-screen p-6 lg:p-10 custom-scrollbar">
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-10 z-10 custom-scrollbar space-y-12">
+
+          {/* {pendingInvites && pendingInvites.length > 0 && (
+    <InviteSection 
+      invites={pendingInvites} 
+      onAccept={handleAcceptInvite} 
+      onReject={batchService.rejectCollabRequest}
+      isDark={isDarkMode}
+    />
+  )} */}
           
           <section className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-8">
             <div className="animate-in fade-in slide-in-from-left-6 duration-700">

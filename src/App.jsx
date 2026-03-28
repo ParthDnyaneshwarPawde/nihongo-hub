@@ -1,21 +1,21 @@
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { auth, db } from './firebase';
+import { auth, db } from '@services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import React from 'react';
 
 // Pages & Components
-import Login from './pages/Login';
-import Onboarding from './pages/Onboarding';
-import StudentDashboard from './pages/StudentDashboard';
-import TeacherDashboard from './pages/TeacherDashboard';
-import ProtectedRoute from './components/ProtectedRoute';
-import Room from "./pages/Room"; 
-import LiveClassrooms from './pages/LiveClassrooms';
-import CourseCatalog from './pages/CourseCatalog';
-import ProfileSettings from './pages/ProfileSettings';
-import TeacherBatches from './pages/TeacherBatches';
+import Login from '@features/auth/services/Login';
+import Onboarding from '@features/auth/Onboarding';
+import StudentDashboard from '@features/student/StudentDashboard/StudentDashboard';
+import CourseCatalog from '@features/student/StudentDashboard/CourseCatalog';
+import ProfileSettings from '@features/student/StudentDashboard/ProfileSettings';
+import TeacherDashboard from '@features/teacher/TeacherDashboard/TeacherDashboard';
+import TeacherBatches from '@features/teacher/TeacherDashboard/TeacherBatches/TeacherBatches';
+import LiveClassrooms from '@features/teacher/TeacherDashboard/LiveClassrooms/LiveClassrooms';
+import Room from '@features/teacher/TeacherDashboard/services/Room';
+import ProtectedRoute from '@components/shared/ProtectedRoute';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);

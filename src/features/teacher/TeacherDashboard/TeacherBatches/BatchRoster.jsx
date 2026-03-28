@@ -8,7 +8,7 @@ import {
   collection, query, where, onSnapshot, doc, 
   updateDoc, deleteDoc, arrayUnion, arrayRemove 
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '@services/firebase';
 
 export default function BatchRoster({ batchData, isDarkMode }) {
   const [searchQuery, setSearchQuery] = useState('');

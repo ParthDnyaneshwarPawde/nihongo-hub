@@ -5,12 +5,12 @@ import {
   Video, Mic2, Tv, Trophy, Calendar, Zap, Info, Filter, MessageCircle, Menu, X, ShieldCheck, Loader2
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase'; // Adjust path if your firebase file is elsewhere
+import { auth } from '@services/firebase'; // Adjust path if your firebase file is elsewhere
 import { collection, query, where, onSnapshot, limit, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '@services/firebase';
 import { useNavigate } from 'react-router-dom';
-import ResourceVault from './ResourceVault';
-import CalendarPage from './CalendarPage';
+import ResourceVault from '@features/student/StudentDashboard/ResourceVault/ResourceVault';
+import CalendarPage from '@features/student/StudentDashboard/CalendarPage';
 
 export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState('learn');

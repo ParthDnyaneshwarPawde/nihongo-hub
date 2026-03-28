@@ -7,7 +7,7 @@ import {
   CreditCard, Clock, Info, Check  
 } from 'lucide-react';
 import { collection, setDoc, onSnapshot, arrayRemove, doc, deleteDoc, getDoc, query, updateDoc, arrayUnion } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth } from '@services/firebase';
 
 export default function CourseCatalog() {
   const navigate = useNavigate();

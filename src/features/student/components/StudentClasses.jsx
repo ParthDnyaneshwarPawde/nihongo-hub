@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase'; // Import your firebase config
+import { db } from '@services/firebase'; // Import your firebase config
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { Calendar, Clock, Video, Mic, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
