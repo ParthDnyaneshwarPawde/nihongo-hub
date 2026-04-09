@@ -6,8 +6,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import React from 'react';
 
 // Pages & Components
-import Login from '@features/auth/services/Login';
-import Onboarding from '@features/auth/Onboarding';
+import Login from '@features/auth/login/Login';
+import Onboarding from '@features/auth/onboarding/Onboarding';
 import StudentDashboard from '@features/student/StudentDashboard/StudentDashboard';
 import CourseCatalog from '@features/student/StudentDashboard/CourseCatalog';
 import ProfileSettings from '@features/student/StudentDashboard/ProfileSettings';

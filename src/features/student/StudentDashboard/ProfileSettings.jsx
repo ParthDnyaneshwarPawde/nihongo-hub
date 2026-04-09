@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '@services/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { 
   ArrowLeft, User, Phone, FileText, BookOpen, 
   Target, Calendar, Award, Lock, LogOut, Save, 
   CheckCircle2, AlertCircle, Heart
 } from 'lucide-react';
+import { useLogoutConfirm } from '@hooks/useLogoutConfirm';
+import LogoutShield from '@components/shared/LogoutShield';
 
 export default function ProfileSettings() {
   const navigate = useNavigate();
@@ -105,15 +107,7 @@ export default function ProfileSettings() {
     }
   };
 
-  // Logout Logic
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      navigate('/');
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  };
+  const { isConfirming, requestLogout, cancelLogout, confirmLogout } = useLogoutConfirm();
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-indigo-600 font-black">Loading Profile...</div>;
@@ -172,7 +166,7 @@ export default function ProfileSettings() {
               </button>
 
               <button 
-                onClick={handleLogout}
+                onClick={requestLogout}
                 className="w-full flex items-center gap-3 p-4 rounded-2xl bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors font-bold text-sm"
               >
                 <LogOut size={18} />
@@ -282,6 +276,9 @@ export default function ProfileSettings() {
           </div>
         </div>
       </main>
+
+      {/* Confirmation Shield */}
+      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={false} />
     </div>
   );
 }

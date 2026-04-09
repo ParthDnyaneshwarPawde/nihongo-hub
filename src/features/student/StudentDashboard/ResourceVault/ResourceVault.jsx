@@ -1,65 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import SecureViewer from '@components/shared/SecureViewer';
-import { createPortal } from 'react-dom'; // 👈 Add this import
-import { 
-  Search, X, FileText, Download, Database, FileArchive, PlayCircle,
-  RefreshCw, Eye, ShieldAlert, Info, Activity, Zap, 
-  ArrowRight, Layers, CheckCircle2, User, Clock, Lock
-} from 'lucide-react';
-import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
-import { db } from '@services/firebase';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { RefreshCw, ShieldAlert, ArrowRight, Lock, Activity, User, Layers, CheckCircle2 } from 'lucide-react';
+import SecureViewer from '@components/shared/SecureViewer';
+
+// Hooks
+import { useVaultResources } from './hooks/useVaultResources';
+import { useSearchFilters } from './hooks/useSearchFilters';
+
+// Components
+import SearchBar from './components/SearchBar';
+import CategoryFilter from './components/CategoryFilter';
+import LibraryGrid from './components/LibraryGrid';
 
 export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolledCourseTitles = [], currentUser }) {
   const navigate = useNavigate();
-  // Add this with your other states (searchQuery, activeFilter, etc.)
-const [viewingPdf, setViewingPdf] = useState(null);
-  const [activeBatch, setActiveBatch] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('ALL');
+  const [viewingPdf, setViewingPdf] = useState(null);
 
-  const isEnrolled = enrolledCourseTitles.includes(selectedCourseTitle);
-
-  useEffect(() => {
-    if (!selectedCourseTitle || !isEnrolled) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    const q = query(
-      collection(db, 'batches'),
-      where('title', '==', selectedCourseTitle),
-      limit(1)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        setActiveBatch({ id: doc.id, ...doc.data() });
-      } else {
-        setActiveBatch(null);
-      }
-      setLoading(false);
-    }, (error) => {
-      console.error("Vault Access Error:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [selectedCourseTitle, isEnrolled]);
-
-  // --- Logic Prep ---
-  const rawAssets = activeBatch?.resources || [];
-  const isVaultLocked = activeBatch?.isVaultLocked || false;
-  const leadTeacher = activeBatch?.teacherNames?.[0] || "Sensei Admin";
-
-  const filteredAssets = rawAssets.filter(asset => {
-    const matchesSearch = asset.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = activeFilter === 'ALL' || asset.category === activeFilter;
-    return matchesSearch && matchesFilter;
+  const { activeBatch, loading, isEnrolled } = useVaultResources({
+    selectedCourseTitle,
+    enrolledCourseTitles
   });
+
+  const {
+    searchQuery,
+    setSearchQuery,
+    debouncedQuery,
+    activeFilter,
+    setActiveFilter
+  } = useSearchFilters('ALL', 300);
 
   if (loading) {
     return (
@@ -90,6 +59,17 @@ const [viewingPdf, setViewingPdf] = useState(null);
       </div>
     );
   }
+
+  const rawAssets = activeBatch?.resources || [];
+  const isVaultLocked = activeBatch?.isVaultLocked || false;
+  const leadTeacher = activeBatch?.teacherNames?.[0] || "Sensei Admin";
+
+  // Filter Engine (now using debounced query)
+  const filteredAssets = rawAssets.filter(asset => {
+    const matchesSearch = asset.title.toLowerCase().includes(debouncedQuery.toLowerCase());
+    const matchesFilter = activeFilter === 'ALL' || asset.category === activeFilter;
+    return matchesSearch && matchesFilter;
+  });
 
   // --- 🚧 2. PRIVATE / MAINTENANCE MODE ---
   if (isVaultLocked) {
@@ -142,118 +122,46 @@ const [viewingPdf, setViewingPdf] = useState(null);
 
       {/* 🛠️ NAVIGATION DOCK */}
       <div className="flex flex-col xl:flex-row items-center gap-4 sticky top-4 z-40">
-        <div className={`p-2 rounded-[2.5rem] border backdrop-blur-xl shadow-2xl flex items-center gap-2 overflow-x-auto hide-scrollbar w-full xl:w-auto ${isDarkMode ? 'bg-slate-950/80 border-white/5' : 'bg-white/90 border-slate-200'}`}>
-          {['ALL', 'CHEAT_SHEETS', 'AUDIO_PACKS', 'FLASHCARDS', 'MOCK_TESTS'].map((id) => (
-            <button
-              key={id}
-              onClick={() => setActiveFilter(id)}
-              className={`px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap
-                ${activeFilter === id 
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 scale-105' 
-                  : isDarkMode ? 'text-slate-500 hover:text-white hover:bg-white/5' : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-            >
-              {id.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
+        <CategoryFilter 
+          isDarkMode={isDarkMode} 
+          activeFilter={activeFilter} 
+          setActiveFilter={setActiveFilter} 
+        />
+        <SearchBar 
+          isDarkMode={isDarkMode} 
+          searchQuery={searchQuery} 
+          setSearchQuery={setSearchQuery} 
+        />
+      </div>
 
-        <div className={`relative flex-1 w-full xl:w-80 group`}>
-          <Search size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-500 transition-colors" />
-          <input 
-            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
-            placeholder="Search this Vault..." 
-            className={`w-full pl-16 pr-8 py-5 rounded-[2.5rem] border font-black text-[11px] uppercase tracking-widest outline-none transition-all shadow-xl ${isDarkMode ? 'bg-slate-950 border-white/5 text-white focus:border-indigo-500/50' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400'}`} 
+      {/* 📚 KINETIC GRID ENGINE */}
+      <LibraryGrid 
+        assets={filteredAssets} 
+        isDarkMode={isDarkMode} 
+        setViewingPdf={setViewingPdf} 
+      />
+
+      {/* 🚨 MODAL PLACEMENT - SECURE PDF VIEWER 🚨 */}
+      {viewingPdf && createPortal(
+        <div style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+            zIndex: 2147483647, 
+            backgroundColor: isDarkMode ? '#000000' : 'rgba(0,0,0,0.9)'
+          }} className="animate-in fade-in duration-300 flex flex-col">
+          <SecureViewer 
+            fileUrl={viewingPdf.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} 
+            isDarkMode={isDarkMode} 
+            userEmail={currentUser?.email || "Protected Student"}
+            onClose={() => setViewingPdf(null)} 
           />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-  {filteredAssets.map((asset) => {
-    const isPDF = asset.type === 'PDF';
-
-    return (
-      <div key={asset.id} className={`group relative flex flex-col p-8 rounded-[3rem] border transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl overflow-hidden ${isDarkMode ? 'bg-[#0B1120] border-white/5' : 'bg-white border-slate-200'}`}>
-        
-        <div className="flex justify-between items-center mb-10 relative z-10">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner transition-all group-hover:scale-110 
-            ${asset.type === 'AUDIO' ? 'bg-emerald-500/10 text-emerald-500' : isPDF ? 'bg-indigo-500/10 text-indigo-500' : 'bg-amber-500/10 text-amber-500'}`}>
-            {asset.type === 'AUDIO' ? <PlayCircle size={28}/> : isPDF ? <FileText size={28}/> : <FileArchive size={28}/>}
-          </div>
-          
-          {/* Badge shows "View Only" for PDFs to signal protection */}
-          <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${isPDF ? 'bg-indigo-600 text-white border-indigo-500 shadow-lg' : isDarkMode ? 'bg-slate-900 border-white/5 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
-             {isPDF ? <span className="flex items-center gap-1.5"><Lock size={12}/> Protected</span> : asset.size}
-          </div>
-        </div>
-
-        <div className="relative z-10 flex-1 mb-10">
-           <h3 className={`text-2xl font-black leading-tight tracking-tighter transition-colors group-hover:text-indigo-500 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-             {asset.title}
-           </h3>
-           <p className="text-xs font-bold text-slate-500 mt-3 italic line-clamp-2">"{asset.desc}"</p>
-        </div>
-
-        {/* 🚨 SECURE ACTION LOGIC 🚨 */}
-        <div className="grid grid-cols-5 gap-2 relative z-10">
-          {isPDF ? (
-            /* PDF ONLY: No download link, only the Viewer trigger */
-            <button 
-              onClick={() => setViewingPdf(asset)} 
-              className="col-span-5 py-5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-[0.3em] flex items-center justify-center gap-3 hover:bg-indigo-500 shadow-xl shadow-indigo-600/20 active:scale-95 transition-all"
-            >
-              <Eye size={18} /> Open Secure Reader
-            </button>
-          ) : (
-            /* OTHER FILES: Eye icon previews, Hard Copy downloads */
-            <>
-              <button 
-                onClick={() => window.open(asset.fileUrl, '_blank')}
-                className={`col-span-1 py-4 rounded-2xl flex items-center justify-center border transition-all ${isDarkMode ? 'bg-slate-900 border-white/5 text-slate-400 hover:text-white' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-900'}`}
-              >
-                <Eye size={18} />
-              </button>
-              <a 
-                href={asset.fileUrl} download
-                className="col-span-4 py-4 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-[10px] uppercase tracking-[0.3em] flex items-center justify-center gap-3 hover:opacity-90 shadow-xl transition-all"
-              >
-                <Download size={16} /> Hard Copy
-              </a>
-            </>
-          )}
-        </div>
-        
-        {/* Background Letter Watermark */}
-        <div className={`absolute -bottom-6 -right-4 text-9xl font-black opacity-[0.03] select-none pointer-events-none ${isDarkMode ? 'text-white' : 'text-black'}`}>{asset.type.charAt(0)}</div>
-      </div>
-    );
-  })}
-</div>
-
-{/* 🚨 MODAL PLACEMENT (Place this just before the very last </div>) 🚨 */}
-{viewingPdf && createPortal(
-  <div style={{ 
-      position: 'fixed', 
-      top: 0, 
-      left: 0, 
-      right: 0, 
-      bottom: 0, 
-      zIndex: 2147483647, // 👈 The absolute maximum z-index allowed by browsers
-      backgroundColor: isDarkMode ? '#000000' : 'rgba(0,0,0,0.9)'
-    }} className="animate-in fade-in duration-300 flex flex-col">
-    <SecureViewer 
-      fileUrl={viewingPdf.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} 
-      isDarkMode={isDarkMode} 
-      userEmail={currentUser?.email || "Protected Student"}
-      onClose={() => setViewingPdf(null)} // 👈 THIS IS THE LINE THAT CLOSES THE VIEWER
-    />
-  </div>,
-  document.body
-)}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
+// Internal Helper for Dashboard
 function VaultMetric({ label, val, icon, color, isDark }) {
   const themes = {
     indigo: 'bg-indigo-600/10 text-indigo-500 border-indigo-500/20 shadow-indigo-500/5',

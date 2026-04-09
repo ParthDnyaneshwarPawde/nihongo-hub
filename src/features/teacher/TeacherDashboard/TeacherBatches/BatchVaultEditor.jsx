@@ -229,6 +229,9 @@ export default function BatchVaultEditor({ batchData, isDarkMode }) {
                     <option value="AUDIO_PACKS">Audio Packs</option>
                     <option value="FLASHCARDS">Anki Decks</option>
                     <option value="MOCK_TESTS">Mock Tests</option>
+                    <option value="VOCAB">Vocab</option>
+                    <option value="GRAMMAR">Grammar</option>
+                    <option value="KANJI">Kanji</option>
                   </select>
                   <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className={`flex-1 p-5 rounded-2xl border text-[10px] font-black uppercase outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
                     <option value="PDF">PDF</option>
