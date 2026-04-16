@@ -9,6 +9,7 @@ import FloatingKanji from './background/FloatingKanji';
 // We only need these two hooks now!
 import { useDashboardNavigation } from './hooks/useDashboardNavigation';
 import { useDashboardHomeEffects } from './hooks/useDashboardHomeEffects';
+import { useStickyState } from '@/hooks/useStickyState';
 
 import DashboardHome from './DashboardHome/DashboardHome';
 import LiveClassrooms from './LiveClassrooms/LiveClassrooms';
@@ -47,7 +48,7 @@ export default function TeacherDashboard() {
   }, [isDarkMode]);
 
   // Router Map for dynamic tab loading
-  const renderActiveTab = () => {
+  const renderactiveTab = () => {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardHome key="dashboard" isDarkMode={isDarkMode} {...dashboardState} />;
@@ -93,7 +94,7 @@ export default function TeacherDashboard() {
         toggleSidebar={toggleSidebar}
       >
         <AnimatePresence mode="wait">
-          {renderActiveTab()}
+          {renderactiveTab()}
         </AnimatePresence>
       </DashboardShell>
     </div>

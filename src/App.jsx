@@ -18,8 +18,9 @@ import LiveClassrooms from '@features/teacher/TeacherDashboard/LiveClassrooms/Li
 import Room from '@features/teacher/TeacherDashboard/services/Room';
 import ProtectedRoute from '@components/shared/ProtectedRoute';
 import ExamHub from '@features/student/ExamEngine/ExamHub';
-import QuestionForge from '@features/teacher/TeacherDashboard/ExamManagement/QuestionForge';
+import QuestionForge from '@features/teacher/TeacherDashboard/TeacherBatches/QuestionForge';
 import LectureViewer from '@features/student/StudentDashboard/CourseContent/LectureViewer';
+// import BatchCommandCenter from 'nihongo-hub/src/pages/BatchCommandCenter';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -104,7 +105,7 @@ function App() {
 
 
 
-<Route path="/lecture" element={
+<Route path="/lecture-viewer/:batchId" element={
   <ProtectedRoute requiredRole="student">
     <LectureViewer />
   </ProtectedRoute>
@@ -128,11 +129,17 @@ function App() {
         </ProtectedRoute>
       } />
 
-      <Route path="/questionforge" element={
+      <Route path="/forge/quiz/:batchId/:modId/:chapId/:exerciseId?" element={
         <ProtectedRoute requiredRole="teacher">
           <QuestionForge />
         </ProtectedRoute>
-      } />
+      } /> 
+
+      {/* <Route path="/commandcenter/:batchId" element={
+        <ProtectedRoute requiredRole="teacher">
+          <BatchCommandCenter />
+        </ProtectedRoute>
+      } /> */}
 
       <Route path="/profile-settings" element={
         <ProtectedRoute requiredRole="student">
@@ -142,6 +149,11 @@ function App() {
 
       {/* 🚨 NEW ROUTE FOR THE EXAM ENGINE */}
       <Route path="/test-engine" element={
+        <ProtectedRoute requiredRole="student">
+          <ExamEngine />
+        </ProtectedRoute>
+      } />
+      <Route path="/test-engine/:batchId/:modId/:chapId/:exerciseId" element={
         <ProtectedRoute requiredRole="student">
           <ExamEngine />
         </ProtectedRoute>

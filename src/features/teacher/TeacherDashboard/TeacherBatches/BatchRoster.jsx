@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useStickyState } from '@hooks/useStickyState';
 import { 
   Users, UserCheck, ShieldAlert, Search, 
   CheckCircle2, XCircle, Mail, Clock, Receipt, 
@@ -12,7 +13,7 @@ import { db } from '@services/firebase';
 
 export default function BatchRoster({ batchData, isDarkMode }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('PENDING');
+  const [activeTab, setActiveTab] = useStickyState('PENDING', 'teacher-batch-roster-tab');
   
   const [pendingRequests, setPendingRequests] = useState([]);
   const [enrolledStudents, setEnrolledStudents] = useState([]);
@@ -101,9 +102,9 @@ await updateDoc(doc(db, 'users', request.studentUid), {
             enrolledCourses: arrayRemove(student.courseTitle) 
           });
           // Safer approach for long-term scale
-await updateDoc(doc(db, 'users', request.studentUid), {
-  enrolledCourseIds: arrayRemove(batchData.id) 
-});
+          await updateDoc(doc(db, 'users', student.studentUid), {
+            enrolledCourseIds: arrayRemove(batchData.id) 
+          });
         }
       } catch (error) {
         console.error("Revoke Error:", error);

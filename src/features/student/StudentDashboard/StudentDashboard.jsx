@@ -50,8 +50,12 @@ export default function StudentDashboard() {
     latestBulletin,
     setLatestBulletin,
     displayName,
-    displayInitial
+    displayInitial,
+    dynamicBatches,
   } = useStudentSession();
+
+  const activeBatch = dynamicBatches.find(b => b.title === level || b.level === level);
+  const activeBatchId = activeBatch ? activeBatch.id : null;
 
   // Modal States
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -198,7 +202,7 @@ export default function StudentDashboard() {
     </div>
   </div>
 </section> */}
-                 <QuickStats level={level} isDarkMode={isDarkMode} />
+                 <QuickStats level={level} isDarkMode={isDarkMode} batchId={activeBatchId} />
 
                  <section>
                     <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 md:gap-0 mb-8">

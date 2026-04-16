@@ -3,6 +3,7 @@ import { Map, Database, Users, Settings, ArrowLeft, ExternalLink } from 'lucide-
 import { getAuth } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
+import { useStickyState } from '@/hooks/useStickyState';
 // 🚨 IMPORT YOUR TWO NEW FUNCTIONAL COMPONENTS HERE:
 // Make sure BatchVaultEditor.jsx and BatchRoster.jsx are saved in the same folder!
 import BatchVaultEditor from '@features/teacher/TeacherDashboard/TeacherBatches/BatchVaultEditor'; 
@@ -12,7 +13,7 @@ import PathBuilderEngine from '@features/teacher/TeacherDashboard/TeacherBatches
 
 export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
   // We default to VAULT so you can see it immediately when it opens
-  const [activeView, setActiveView] = useState('VAULT'); 
+  const [activeView, setActiveView] = useStickyState('VAULT', 'active-command-center-view'); 
   const [realName, setRealName] = useState("Loading...");
   // const { batchId } = useParams();
 useEffect(() => {

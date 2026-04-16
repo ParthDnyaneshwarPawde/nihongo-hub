@@ -2,76 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Settings as SettingsIcon, Bookmark, Clock, Volume2, 
   ChevronRight, ChevronLeft, CheckCircle2, PlayCircle, AlertCircle,
-  Moon, Sun
+  Moon, Sun, Loader2, Trophy, Target, RefreshCcw
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
-// ==========================================
-// 📦 DUMMY DATA (Phase 1 Testing)
-// ==========================================
-const DUMMY_QUESTIONS = [
-  {
-    id: "q_001",
-    type: "Vocab & Kanji",
-    prompt: "Choose the correct reading for the highlighted word.",
-    highlightedWord: "電車",
-    sentence: "毎日 [電車] で学校に行きます。",
-    mediaType: "none",
-    options: [
-      { id: "opt_1", text: "でんしゃ", peerStat: 78 },
-      { id: "opt_2", text: "じてんしゃ", peerStat: 12 },
-      { id: "opt_3", text: "じどうしゃ", peerStat: 5 },
-      { id: "opt_4", text: "くるま", peerStat: 5 }
-    ],
-    correctOptionId: "opt_1",
-    idealTimeSeconds: 30,
-    explanation: "電車 (densha) means train. じてんしゃ (jitensha) is bicycle, and じどうしゃ (jidousha) is car."
-  },
-  {
-    id: "q_002",
-    type: "Grammar",
-    prompt: "Fill in the blank with the most appropriate particle.",
-    sentence: "私はりんご ___ 好きです。",
-    mediaType: "none",
-    options: [
-      { id: "opt_1", text: "を", peerStat: 35 },
-      { id: "opt_2", text: "が", peerStat: 55 },
-      { id: "opt_3", text: "に", peerStat: 8 },
-      { id: "opt_4", text: "で", peerStat: 2 }
-    ],
-    correctOptionId: "opt_2",
-    idealTimeSeconds: 45,
-    explanation: "The adjective 好き (suki) requires the particle が (ga) to mark the thing that is liked."
-  },
-  {
-    id: "q_003",
-    type: "Listening",
-    prompt: "Listen to the audio and choose the correct time.",
-    mediaType: "audio",
-    mediaUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
-    options: [
-      { id: "opt_1", text: "10:30", peerStat: 20 },
-      { id: "opt_2", text: "10:45", peerStat: 60 },
-      { id: "opt_3", text: "11:00", peerStat: 15 },
-      { id: "opt_4", text: "11:15", peerStat: 5 }
-    ],
-    correctOptionId: "opt_2",
-    idealTimeSeconds: 60,
-    explanation: "The announcer clearly states the train is delayed by 15 minutes, pushing the 10:30 departure to 10:45."
-  }
-];
+// 🚨 FIREBASE IMPORTS
+import { db, auth } from '@services/firebase'; 
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-// ==========================================
-// 🚀 MAIN COMPONENT
-// ==========================================
 export default function ExamEngine() {
   const navigate = useNavigate();
-  // 🚨 Restored Dynamic Theme State
+  const { batchId, modId, chapId, exerciseId } = useParams();
+
   const [isDarkMode, setIsDarkMode] = useState(true); 
   
-  // -- Exam State --
+  // -- Exam Lifecycle State --
+  const [examState, setExamState] = useState('loading'); // 'loading', 'intro', 'active', 'results'
+  const [examConfig, setExamConfig] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  
+  // -- Active Test State --
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [timeSpent, setTimeSpent] = useState(0);
+  const [timeSpent, setTimeSpent] = useState(0); // Time on current question
+  const [totalTimeSpent, setTotalTimeSpent] = useState(0); // Time for whole exam
+  const [score, setScore] = useState(0); // Tracks first-attempt correct answers
   
   // -- Settings State --
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -85,24 +39,81 @@ export default function ExamEngine() {
     showPeerStats: true
   });
   
-  // -- Question State --
+  // -- Question Interaction State --
   const [selectedOpt, setSelectedOpt] = useState(null);
   const [checkStatus, setCheckStatus] = useState("idle"); 
   const [attempts, setAttempts] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const currentQ = DUMMY_QUESTIONS[currentIndex];
+  // ----------------------------------------------------
+  // 📥 FETCH EXAM DATA FROM FIREBASE
+  // ----------------------------------------------------
+  useEffect(() => {
+    const loadExam = async () => {
+      try {
+        const exerciseRef = doc(db, 'batches', batchId, 'module', modId, 'chapters', chapId, 'exercises', exerciseId);
+        const exerciseSnap = await getDoc(exerciseRef);
+
+        if (exerciseSnap.exists()) {
+          const data = exerciseSnap.data();
+          setExamConfig({
+            title: data.title,
+            description: data.description,
+            passPercentage: data.passPercentage || 80,
+            duration: data.duration,
+          });
+
+          // Map Firebase data to UI format
+          const formattedQuestions = data.questions.map(q => {
+            // Find the correct option ID
+            const correctOpt = q.options.find(o => o.isCorrect);
+            
+            // Generate dummy peer stats for UI flavor (adds up to ~100%)
+            const optionsWithStats = q.options.map(o => ({
+              ...o,
+              peerStat: Math.floor(Math.random() * 40) + 10 
+            }));
+
+            return {
+              id: q.id,
+              type: q.type.replace('_', ' ').toUpperCase(),
+              prompt: q.promptText,
+              sentence: null, // Add to your builder later if needed
+              highlightedWord: null, 
+              mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
+              mediaUrl: q.mediaUrl,
+              options: optionsWithStats,
+              correctOptionId: correctOpt ? correctOpt.id : null,
+              idealTimeSeconds: q.idealTimeSeconds || 60,
+              explanation: q.officialSolution?.text || "No explanation provided."
+            };
+          });
+
+          setQuestions(formattedQuestions);
+          setExamState('intro');
+        } else {
+          alert("Exam not found!");
+          navigate(-1);
+        }
+      } catch (error) {
+        console.error("Error fetching exam:", error);
+      }
+    };
+
+    loadExam();
+  }, [batchId, modId, chapId, exerciseId, navigate]);
 
   // ⏱️ STOPWATCH TIMER
   useEffect(() => {
     let timer;
-    if (settings.autoStartTimer) {
+    if (examState === 'active' && settings.autoStartTimer) {
       timer = setInterval(() => {
         setTimeSpent(prev => prev + 1);
+        setTotalTimeSpent(prev => prev + 1);
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [currentIndex, settings.autoStartTimer]);
+  }, [currentIndex, examState, settings.autoStartTimer]);
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -113,20 +124,27 @@ export default function ExamEngine() {
   // 🔊 HARDWARE FEEDBACK
   const playSound = (type) => {
     if (!settings.playSounds) return;
+    // You can attach real Audio objects here later
     console.log(`🔊 Playing sound: ${type === 'correct' ? 'TADAN! ✨' : 'UH-OH ❌'}`);
   };
 
   const triggerVibration = () => {
-    if ("vibrate" in navigator) {
-      navigator.vibrate([200, 100, 200]); 
-    }
+    if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]); 
   };
 
   // 🧠 ANSWER LOGIC
+  const currentQ = questions[currentIndex];
+
   const handleCheck = () => {
     if (!selectedOpt) return;
 
     const isCorrect = selectedOpt === currentQ.correctOptionId;
+    
+    // If they got it right on the VERY FIRST try, give them a point!
+    if (isCorrect && attempts === 0) {
+      setScore(prev => prev + 1);
+    }
+
     setAttempts(prev => prev + 1);
 
     if (isCorrect) {
@@ -137,38 +155,60 @@ export default function ExamEngine() {
       setCheckStatus("incorrect");
       playSound("incorrect");
       triggerVibration();
-      if (attempts >= 1 || settings.solutionMode) {
-        setShowExplanation(true);
+      if (attempts >= 0 || settings.solutionMode) {
+        setShowExplanation(true); // Show explanation if they fail
       }
     }
   };
 
   const handleNext = () => {
-    if (currentIndex < DUMMY_QUESTIONS.length - 1) {
+    if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
-      setSelectedOpt(null);
-      setCheckStatus("idle");
-      setAttempts(0);
-      setShowExplanation(false);
-      setTimeSpent(0); 
+      resetQuestionState();
     } else {
-      alert("🎉 You finished the practice set!");
-      navigate('/student-dashboard');
+      finishExam();
     }
   };
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
-      setSelectedOpt(null);
-      setCheckStatus("idle");
-      setAttempts(0);
-      setShowExplanation(false);
-      setTimeSpent(0);
+      resetQuestionState();
     }
   };
 
-  // 🎨 DYNAMIC TEXT SIZE LOGIC
+  const resetQuestionState = () => {
+    setSelectedOpt(null);
+    setCheckStatus("idle");
+    setAttempts(0);
+    setShowExplanation(false);
+    setTimeSpent(0); 
+  };
+
+  // 🏆 FINISH EXAM LOGIC
+  const finishExam = async () => {
+    setExamState('results');
+    
+    // Optional: Save results to Firebase Student Profile
+    try {
+      const userId = auth.currentUser?.uid;
+      if (userId) {
+        await setDoc(doc(db, `batches/${batchId}/user_progress`, userId), {
+          examResults: {
+            [exerciseId]: {
+              score: score,
+              total: questions.length,
+              timeSpent: totalTimeSpent,
+              completedAt: serverTimestamp()
+            }
+          }
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.error("Failed to save results:", err);
+    }
+  };
+
   const getTextClasses = () => {
     switch(settings.textSize) {
       case 'small': return { prompt: 'text-base lg:text-lg', sentence: 'text-lg lg:text-xl', options: 'text-sm lg:text-base' };
@@ -179,31 +219,139 @@ export default function ExamEngine() {
   };
   const fontSizes = getTextClasses();
 
+  // ==========================================
+  // RENDER: LOADING STATE
+  // ==========================================
+  if (examState === 'loading') {
+    return (
+      <div className={`h-screen w-full flex flex-col items-center justify-center font-black uppercase tracking-widest ${isDarkMode ? 'bg-[#0B1121] text-indigo-500' : 'bg-slate-50 text-indigo-600'}`}>
+        <Loader2 size={40} className="animate-spin mb-4" />
+        Decrypting Exam Securely...
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: INTRO SCREEN
+  // ==========================================
+  if (examState === 'intro') {
+    return (
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? 'bg-[#0B1121] text-white' : 'bg-slate-50 text-slate-900'}`}>
+        <div className={`max-w-2xl w-full p-10 md:p-14 rounded-[3rem] border shadow-2xl text-center ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+          <div className="w-24 h-24 mx-auto bg-indigo-500/10 text-indigo-500 rounded-[2rem] flex items-center justify-center rotate-3 mb-8">
+            <AlertCircle size={40} className="-rotate-3" />
+          </div>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">{examConfig.title}</h1>
+          <p className={`text-lg mb-10 leading-relaxed font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+            {examConfig.description || "Prepare yourself. Once you begin, the timer will start."}
+          </p>
+          
+          <div className={`flex flex-wrap justify-center gap-4 mb-10`}>
+            <div className={`px-5 py-3 rounded-2xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Questions</p>
+              <p className="text-xl font-bold">{questions.length}</p>
+            </div>
+            <div className={`px-5 py-3 rounded-2xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Passing Score</p>
+              <p className="text-xl font-bold text-indigo-500">{examConfig.passPercentage}%</p>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setExamState('active')}
+            className="w-full md:w-auto px-12 py-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-lg rounded-2xl transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex items-center justify-center mx-auto gap-3"
+          >
+            Start Assessment <PlayCircle size={20} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: RESULTS SCREEN (STATS)
+  // ==========================================
+  if (examState === 'results') {
+    const accuracy = Math.round((score / questions.length) * 100);
+    const passed = accuracy >= examConfig.passPercentage;
+
+    return (
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? 'bg-[#0B1121] text-white' : 'bg-slate-50 text-slate-900'}`}>
+        <div className={`max-w-2xl w-full p-10 md:p-14 rounded-[3rem] border shadow-2xl text-center relative overflow-hidden ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+          
+          {/* Confetti / Background Glow */}
+          <div className={`absolute -top-32 -right-32 w-64 h-64 blur-[100px] rounded-full ${passed ? 'bg-emerald-500/30' : 'bg-rose-500/20'}`}></div>
+
+          <div className={`w-28 h-28 mx-auto rounded-[2.5rem] flex items-center justify-center rotate-3 mb-8 border-4 shadow-xl
+            ${passed ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-rose-500/10 text-rose-500 border-rose-500/30'}`}>
+            {passed ? <Trophy size={48} className="-rotate-3" /> : <Target size={48} className="-rotate-3" />}
+          </div>
+          
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-2">
+            {passed ? "Assessment Cleared!" : "Training Required."}
+          </h1>
+          <p className={`text-base font-bold uppercase tracking-widest mb-10 ${passed ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {passed ? "Excellent Performance" : "Did not meet passing criteria"}
+          </p>
+          
+          <div className={`grid grid-cols-2 gap-4 mb-10`}>
+            <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Final Score</p>
+              <p className={`text-5xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{score} <span className="text-xl text-slate-500">/ {questions.length}</span></p>
+            </div>
+            <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Accuracy</p>
+              <p className={`text-5xl font-black ${passed ? 'text-emerald-500' : 'text-rose-500'}`}>{accuracy}%</p>
+            </div>
+            <div className={`col-span-2 p-4 rounded-2xl border flex justify-center items-center gap-3 ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <Clock size={16} className="text-indigo-500"/>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Time Elapsed: <span className={isDarkMode ? 'text-white' : 'text-slate-900'}>{formatTime(totalTimeSpent)}</span></p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {!passed && (
+              <button onClick={() => window.location.reload()} className={`px-8 py-4 rounded-2xl font-black border transition-all active:scale-95 flex justify-center items-center gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}>
+                <RefreshCcw size={18}/> Retry Exam
+              </button>
+            )}
+            <button 
+              onClick={() => navigate('/student-dashboard')}
+              className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex justify-center items-center"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // RENDER: ACTIVE EXAM (Your beautiful UI!)
+  // ==========================================
   return (
     <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden relative transition-colors duration-500
       ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
       
-      {/* Subtle Background Pattern */}
       <div className={`absolute inset-0 pointer-events-none opacity-[0.02] ${isDarkMode ? 'invert-0' : 'invert'}`} 
            style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }}>
       </div>
 
-      {/* --- TOP NAVBAR (FIXED & FLEX-BALANCED) --- */}
+      {/* --- TOP NAVBAR --- */}
       <header className={`shrink-0 h-16 px-4 lg:px-6 flex items-center justify-between border-b relative z-20 transition-colors duration-500
         ${isDarkMode ? 'border-slate-800/80 bg-[#0B1121]/95 backdrop-blur-md' : 'border-slate-200 bg-white/95 backdrop-blur-md'}`}>
         
-        {/* Left: Back & Title (Width 1/3 to balance center) */}
         <div className="flex items-center gap-3 w-1/3">
           <button onClick={() => navigate('/student-dashboard')} className={`p-2 -ml-2 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}>
             <X size={20} />
           </button>
           <div className={`hidden sm:block h-6 w-px mx-1 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
           <h1 className={`font-bold text-sm truncate hidden sm:block ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-            JLPT N4 &gt;&gt; {currentQ.type}
+            {examConfig.title} &gt;&gt; {currentQ.type}
           </h1>
         </div>
 
-        {/* Center: Timer (Flex centered) */}
         <div className="flex items-center justify-center w-1/3">
           <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border shadow-sm text-sm font-black tracking-widest transition-colors duration-300 ${
             timeSpent > currentQ.idealTimeSeconds 
@@ -219,7 +367,6 @@ export default function ExamEngine() {
           </div>
         </div>
 
-        {/* Right: Tools (Width 1/3) */}
         <div className="flex items-center justify-end gap-1 w-1/3">
           <button 
             onClick={() => setIsDarkMode(!isDarkMode)}
@@ -241,14 +388,13 @@ export default function ExamEngine() {
         </div>
       </header>
 
-      {/* --- MAIN QUESTION STAGE (SCROLLABLE) --- */}
+      {/* --- MAIN QUESTION STAGE --- */}
       <main className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center p-4 lg:p-10 relative z-10">
         <div className="w-full max-w-4xl space-y-8 pb-10">
           
-          {/* Header Info */}
           <div className="flex justify-between items-end">
             <div>
-              <p className={`text-sm font-black mb-1 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Question {currentIndex + 1}</p>
+              <p className={`text-sm font-black mb-1 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Question {currentIndex + 1} of {questions.length}</p>
               <p className={`text-xs uppercase tracking-widest font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{currentQ.type}</p>
             </div>
             <div className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500 shadow-sm'}`}>
@@ -256,9 +402,7 @@ export default function ExamEngine() {
             </div>
           </div>
 
-          {/* Prompt & Sentence Container */}
-          <div className={`space-y-6 rounded-3xl p-6 lg:p-10 border transition-colors duration-500 shadow-sm
-            ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white border-slate-200'}`}>
+          <div className={`space-y-6 rounded-3xl p-6 lg:p-10 border transition-colors duration-500 shadow-sm ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white border-slate-200'}`}>
             <h2 className={`${fontSizes.prompt} font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
               {currentQ.prompt}
             </h2>
@@ -275,7 +419,6 @@ export default function ExamEngine() {
               </div>
             )}
 
-            {/* Media Player */}
             {currentQ.mediaType === 'audio' && (
                <div className={`p-4 rounded-2xl border flex items-center gap-5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                  <button className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 active:scale-95 shrink-0">
@@ -289,14 +432,12 @@ export default function ExamEngine() {
             )}
           </div>
 
-          {/* Options Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
             {currentQ.options.map((opt, idx) => {
               const isSelected = selectedOpt === opt.id;
               const hasAnswered = checkStatus !== "idle";
               const showStats = hasAnswered && settings.showPeerStats;
               
-              // 🎨 Premium Option Styling Logic
               let btnClass = isDarkMode 
                 ? 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800 hover:border-slate-600 text-slate-300' 
                 : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md text-slate-700';
@@ -322,7 +463,6 @@ export default function ExamEngine() {
                   letterBg = 'bg-rose-500 text-white';
                 }
               } else if (hasAnswered && opt.id === currentQ.correctOptionId && !settings.delayCorrectDisplay) {
-                // Highlight the correct answer if they missed it
                 btnClass = isDarkMode ? 'border-emerald-500/50 text-emerald-300' : 'border-emerald-500/50 text-emerald-700 bg-emerald-50/50';
                 statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
               }
@@ -339,7 +479,6 @@ export default function ExamEngine() {
                   }}
                   className={`relative overflow-hidden p-5 rounded-2xl border-2 transition-all duration-200 flex items-center min-h-[80px] group ${btnClass}`}
                 >
-                  {/* Peer Stat Fill Background */}
                   {showStats && (
                     <div 
                       className={`absolute left-0 top-0 bottom-0 transition-all duration-1000 ease-out ${statBarColor}`} 
@@ -347,17 +486,14 @@ export default function ExamEngine() {
                     />
                   )}
 
-                  {/* Option Letter Icon */}
                   <span className={`relative z-10 w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0 mr-4 transition-colors ${letterBg}`}>
                     {['A', 'B', 'C', 'D'][idx]}
                   </span>
                   
-                  {/* Option Text */}
                   <span className={`relative z-10 font-bold text-left flex-1 ${fontSizes.options}`}>
                     {opt.text}
                   </span>
 
-                  {/* Peer Stat % Label */}
                   {showStats && (
                     <span className={`relative z-10 text-xs font-black ml-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {opt.peerStat}%
@@ -368,7 +504,6 @@ export default function ExamEngine() {
             })}
           </div>
 
-          {/* Explanation Box */}
           {showExplanation && (
             <div className={`animate-in slide-in-from-bottom-4 fade-in duration-500 p-6 lg:p-8 border rounded-3xl ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
               <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px] mb-4">
@@ -383,7 +518,7 @@ export default function ExamEngine() {
         </div>
       </main>
 
-      {/* --- BOTTOM ACTION BAR (FIXED) --- */}
+      {/* --- BOTTOM ACTION BAR --- */}
       <footer className={`shrink-0 p-4 lg:p-6 border-t flex justify-between items-center relative z-20 transition-colors duration-500
         ${isDarkMode ? 'border-slate-800/80 bg-[#0B1121]/95 backdrop-blur-md' : 'border-slate-200 bg-white/95 backdrop-blur-md'}`}>
         
@@ -431,14 +566,16 @@ export default function ExamEngine() {
               }
             `}
           >
-            Next <ChevronRight size={18} />
+            {currentIndex < questions.length - 1 ? (
+              <>Next <ChevronRight size={18} /></>
+            ) : (
+              <>Finish Assessment</>
+            )}
           </button>
         </div>
       </footer>
 
-      {/* ========================================== */}
-      {/* ⚙️ SETTINGS DRAWER OVERLAY */}
-      {/* ========================================== */}
+      {/* --- SETTINGS DRAWER OVERLAY --- */}
       {isSettingsOpen && (
         <>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={() => setIsSettingsOpen(false)}></div>
@@ -453,93 +590,42 @@ export default function ExamEngine() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-              
-              {/* Settings Group 1 */}
               <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Display</p>
-                <ToggleRow 
-                  title="Solution Mode" 
-                  desc="See the solution directly when reopening an attempted question"
-                  state={settings.solutionMode} 
-                  onClick={() => setSettings({...settings, solutionMode: !settings.solutionMode})} 
-                  isDarkMode={isDarkMode}
-                />
+                <ToggleRow title="Solution Mode" desc="See the solution directly when reopening an attempted question" state={settings.solutionMode} onClick={() => setSettings({...settings, solutionMode: !settings.solutionMode})} isDarkMode={isDarkMode} />
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700/50">
-                  <div className="flex justify-between items-center mb-3 mt-2">
-                    <p className={`text-sm font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Text Size</p>
-                  </div>
+                  <div className="flex justify-between items-center mb-3 mt-2"><p className={`text-sm font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Text Size</p></div>
                   <div className={`flex rounded-xl p-1 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
                     {['small', 'medium', 'large'].map((size) => (
-                      <button
-                        key={size}
-                        onClick={() => setSettings({...settings, textSize: size})}
-                        className={`flex-1 text-xs py-2 font-bold rounded-lg capitalize transition-all ${
-                          settings.textSize === size 
-                            ? isDarkMode ? 'bg-slate-700 text-white shadow-md' : 'bg-white text-indigo-600 shadow-sm'
-                            : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                      >
-                        {size}
-                      </button>
+                      <button key={size} onClick={() => setSettings({...settings, textSize: size})} className={`flex-1 text-xs py-2 font-bold rounded-lg capitalize transition-all ${settings.textSize === size ? isDarkMode ? 'bg-slate-700 text-white shadow-md' : 'bg-white text-indigo-600 shadow-sm' : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'}`}>{size}</button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* Settings Group 2 */}
               <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Experience</p>
-                <ToggleRow 
-                  title="Auto-start Timer" 
-                  desc="Timer begins immediately on new questions"
-                  state={settings.autoStartTimer} 
-                  onClick={() => setSettings({...settings, autoStartTimer: !settings.autoStartTimer})} 
-                  isDarkMode={isDarkMode}
-                />
-                <ToggleRow 
-                  title="Play Sounds" 
-                  desc="Audio feedback for correct/incorrect answers"
-                  state={settings.playSounds} 
-                  onClick={() => setSettings({...settings, playSounds: !settings.playSounds})} 
-                  isDarkMode={isDarkMode}
-                />
+                <ToggleRow title="Auto-start Timer" desc="Timer begins immediately on new questions" state={settings.autoStartTimer} onClick={() => setSettings({...settings, autoStartTimer: !settings.autoStartTimer})} isDarkMode={isDarkMode} />
+                <ToggleRow title="Play Sounds" desc="Audio feedback for correct/incorrect answers" state={settings.playSounds} onClick={() => setSettings({...settings, playSounds: !settings.playSounds})} isDarkMode={isDarkMode} />
               </div>
 
-               {/* Settings Group 3 */}
                <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Insights</p>
-                <ToggleRow 
-                  title="Show Peer Stats" 
-                  desc="See what percentage of students chose each option"
-                  state={settings.showPeerStats} 
-                  onClick={() => setSettings({...settings, showPeerStats: !settings.showPeerStats})} 
-                  isDarkMode={isDarkMode}
-                />
+                <ToggleRow title="Show Peer Stats" desc="See what percentage of students chose each option" state={settings.showPeerStats} onClick={() => setSettings({...settings, showPeerStats: !settings.showPeerStats})} isDarkMode={isDarkMode} />
               </div>
-
             </div>
           </div>
         </>
       )}
 
-      {/* Animation Styles */}
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-4px); }
-          75% { transform: translateX(4px); }
-        }
-        .animate-shake {
-          animation: shake 0.3s ease-in-out;
-        }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
       `}} />
     </div>
   );
 }
 
-// ---------------------------------------------------------
-// Helper Component for the Settings Toggles
-// ---------------------------------------------------------
 function ToggleRow({ title, desc, state, onClick, isDarkMode }) {
   return (
     <div className="flex items-start justify-between gap-4 cursor-pointer group" onClick={onClick}>

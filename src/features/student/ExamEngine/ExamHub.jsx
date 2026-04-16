@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useStickyState } from '@hooks/useStickyState';
 import { 
   Search, Filter, Lock, PlayCircle, Clock, Trophy, Layers, Target, 
   FileText, ChevronRight, ChevronDown, AlertTriangle, ShieldCheck, 
@@ -138,7 +139,7 @@ export default function ExamHub({ isDarkMode = true, setSidebarOpen }) {
     if (setSidebarOpen) setSidebarOpen(false);
   }, [setSidebarOpen]);
 
-  const [activeTab, setActiveTab] = useState('custom'); 
+  const [activeTab, setActiveTab] = useStickyState('custom', 'examhub-tab'); 
   const [viewMode, setViewMode] = useState('list'); 
   const [expandedCats, setExpandedCats] = useState(['cat_2023']); 
   const [selectedTestToStart, setSelectedTestToStart] = useState(null); 

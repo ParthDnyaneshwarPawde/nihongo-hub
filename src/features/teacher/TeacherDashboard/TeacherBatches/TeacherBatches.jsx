@@ -17,6 +17,8 @@ import { useTeacherSearch } from '@features/teacher/TeacherDashboard/TeacherBatc
 // Services
 import { batchService } from '@features/teacher/TeacherDashboard/TeacherBatches/services/batchService';
 
+import { useStickyState } from '@/hooks/useStickyState';
+
 // Extract Feature Components
 import BatchCard from '@features/teacher/TeacherDashboard/TeacherBatches/components/BatchCard';
 import StepOne from '@features/teacher/TeacherDashboard/TeacherBatches/components/BatchModal/StepOne';
@@ -80,7 +82,7 @@ const handleAcceptInvite = async (invite) => {
   const [addedCoupons, setAddedCoupons] = useState([]);
   const [selectedTeachers, setSelectedTeachers] = useState([]);
 
-  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [selectedBatch, setSelectedBatch] = useStickyState(null, 'active-overlay-batch-id');
 
   // Use the search hook
   const { teacherSearch, setTeacherSearch, foundTeachers } = useTeacherSearch(selectedTeachers);
