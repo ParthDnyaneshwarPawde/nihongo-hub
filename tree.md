@@ -1,7 +1,6 @@
-`	ext  
 Folder PATH listing
-Volume serial number is 000000F7 0450:ECFD
-C:\USERS\ADMIN\ONEDRIVE\DOCUMENTS\JAPANESE SERVER\NIHONGO-HUB\SRC
+Volume serial number is 0450-ECFD
+C:.
 |   App.css
 |   App.jsx
 |   index.css
@@ -140,12 +139,14 @@ C:\USERS\ADMIN\ONEDRIVE\DOCUMENTS\JAPANESE SERVER\NIHONGO-HUB\SRC
 |           |       
 |           +---components
 |           |       NotificationToast.jsx
+|           |       TeacherSidebar.jsx
 |           |       ZenToggle.jsx
 |           |       
 |           +---DashboardHome
 |           |       DashboardHome.jsx
 |           |       
 |           +---hooks
+|           |       useDashboardHomeEffects.js
 |           |       useDashboardNavigation.js
 |           |       useSenseiProfile.js
 |           |       
@@ -214,4 +215,3 @@ C:\USERS\ADMIN\ONEDRIVE\DOCUMENTS\JAPANESE SERVER\NIHONGO-HUB\SRC
 |       firebase.js
 |       
 \---utils
-` 

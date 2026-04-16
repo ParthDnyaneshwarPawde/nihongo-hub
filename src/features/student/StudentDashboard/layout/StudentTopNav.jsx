@@ -21,7 +21,7 @@ export default function StudentTopNav({
   return (
     <header className={`h-20 border-b backdrop-blur-md px-4 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0F172A]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
       <div className="flex items-center gap-3 lg:gap-8">
-        <button className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors" onClick={() => setIsSidebarOpen(true)}>
+        <button className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors" onClick={() => setIsSidebarOpen(true)}>
           <Menu size={24} />
         </button>
         

@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Map, Database, Users, Settings, ArrowLeft, ExternalLink } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
+import { useParams } from 'react-router-dom';
 // 🚨 IMPORT YOUR TWO NEW FUNCTIONAL COMPONENTS HERE:
 // Make sure BatchVaultEditor.jsx and BatchRoster.jsx are saved in the same folder!
 import BatchVaultEditor from '@features/teacher/TeacherDashboard/TeacherBatches/BatchVaultEditor'; 
 import BatchRoster from '@features/teacher/TeacherDashboard/TeacherBatches/BatchRoster';    
 import BatchSettings from '@features/teacher/TeacherDashboard/TeacherBatches/BatchSettings';           
+import PathBuilderEngine from '@features/teacher/TeacherDashboard/TeacherBatches/PathBuilderEngine';
 
 export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
   // We default to VAULT so you can see it immediately when it opens
   const [activeView, setActiveView] = useState('VAULT'); 
   const [realName, setRealName] = useState("Loading...");
+  // const { batchId } = useParams();
 useEffect(() => {
   const fetchTeacherName = async () => {
     const auth = getAuth();
@@ -88,10 +91,7 @@ useEffect(() => {
           
           {activeView === 'PATH_BUILDER' && (
             <div className="animate-in fade-in duration-300">
-               <h1 className="text-3xl font-black mb-4">Curriculum Map Builder</h1>
-               <p className="text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-800 p-10 rounded-3xl text-center font-bold uppercase tracking-widest text-xs">
-                 Path Builder Engine coming in Phase 3...
-               </p>
+               <PathBuilderEngine batchId={batch.id} isDarkMode={isDarkMode} />
             </div>
           )}
 

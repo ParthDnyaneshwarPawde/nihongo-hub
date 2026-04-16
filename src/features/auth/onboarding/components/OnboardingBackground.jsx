@@ -123,6 +123,31 @@ function HaloParticles({ count = 2000 }) {
 
 // --- MAIN BACKGROUND — React.memo for render isolation ---
 const OnboardingBackground = memo(function OnboardingBackground() {
+  const [isMobile, setIsMobile] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (isMobile) {
+    return (
+      <div
+        className="absolute inset-0 z-0 pointer-events-none overflow-hidden bg-[#020617]"
+        style={{ width: '100vw', height: '100vh' }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse 70% 70% at 50% 50%, rgba(99,102,241,0.15) 0%, rgba(2,6,23,1) 100%)',
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
@@ -131,7 +156,7 @@ const OnboardingBackground = memo(function OnboardingBackground() {
       <Canvas
         camera={{ position: [0, 0, 18], fov: 65 }}
         style={{ background: '#020617' }}
-        dpr={[1, 1.5]}
+        dpr={[1, 2]}
       >
         <fog attach="fog" args={['#020617', 18, 55]} />
 

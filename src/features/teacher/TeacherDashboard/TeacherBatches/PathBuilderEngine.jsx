@@ -1,0 +1,471 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  FolderOpen, Layers, PlaySquare, FileText, HelpCircle, 
+  Plus, GripVertical, ChevronDown, X, Save, 
+  Trash2, CheckCircle2, Circle, Type, Link as LinkIcon, Loader2
+} from 'lucide-react';
+
+
+// 🚨 FIREBASE IMPORTS 🚨
+import { db } from '@services/firebase'; 
+import { collection, addDoc, getDocs, doc } from 'firebase/firestore';
+
+export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
+  // -- Curriculum State --
+  const [curriculum, setCurriculum] = useState([]);
+  const [isLoading, setIsLoading] = useState(false); // To show initial load state
+  const [isSaving, setIsSaving] = useState(false);   // To show button spinners
+  
+  // -- Drawer & Editor State --
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editorType, setEditorType] = useState(null); // 'video', 'article', 'quiz'
+  const [activePlacement, setActivePlacement] = useState({ modId: null, chapId: null });
+
+  // ----------------------------------------------------
+  // 📥 INITIAL FETCH (Load data from Firestore)
+  // ----------------------------------------------------
+ // ----------------------------------------------------
+  // 📥 INITIAL FETCH (Load real data from Firestore)
+  // ----------------------------------------------------
+  useEffect(() => {
+    const fetchCurriculum = async () => {
+      setIsLoading(true);
+      try {
+        const modulesRef = collection(db, `batches/${batchId}/module`);
+        const modSnapshot = await getDocs(modulesRef);
+
+        const loadedCurriculum = [];
+
+        // 1. Loop through all Modules
+        for (const modDoc of modSnapshot.docs) {
+          const modData = modDoc.data();
+          const modId = modDoc.id;
+
+          const chaptersRef = collection(db, `batches/${batchId}/module/${modId}/chapters`);
+          const chapSnapshot = await getDocs(chaptersRef);
+          
+          const chapters = [];
+
+          // 2. Loop through all Chapters inside each Module
+          for (const chapDoc of chapSnapshot.docs) {
+            const chapData = chapDoc.data();
+            const chapId = chapDoc.id;
+
+            const items = [];
+
+            // 3. Fetch all content types inside the Chapter
+            const lecturesRef = collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/lectures`);
+            const lecSnap = await getDocs(lecturesRef);
+            lecSnap.forEach(doc => items.push({ id: doc.id, type: 'video', title: doc.data().title }));
+
+            const articlesRef = collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/articles`);
+            const artSnap = await getDocs(articlesRef);
+            artSnap.forEach(doc => items.push({ id: doc.id, type: 'article', title: doc.data().title }));
+
+            const exercisesRef = collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`);
+            const exSnap = await getDocs(exercisesRef);
+            exSnap.forEach(doc => items.push({ id: doc.id, type: 'quiz', title: doc.data().title }));
+
+            chapters.push({
+              id: chapId,
+              title: chapData.chapterName || chapData.title,
+              isExpanded: false, // Keep chapters collapsed by default for a cleaner look
+              items: items
+            });
+          }
+
+          loadedCurriculum.push({
+            id: modId,
+            title: modData.name || modData.title,
+            isExpanded: true, // Keep modules open
+            chapters: chapters
+          });
+        }
+
+        // Set the real data!
+        setCurriculum(loadedCurriculum);
+
+      } catch (error) {
+        console.error("Error fetching curriculum:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCurriculum();
+  }, [batchId]);
+
+  // ----------------------------------------------------
+  // 📤 DATABASE WRITE HANDLERS
+  // ----------------------------------------------------
+
+  // 1. ADD NEW MODULE
+  const handleAddModule = async () => {
+    const title = prompt("Enter Module Name:", "New Module");
+    if (!title) return;
+
+    try {
+      // 1. Save to Firebase
+      const modRef = collection(db, `batches/${batchId}/module`);
+      const docRef = await addDoc(modRef, {
+        name: title,
+        no_of_chapters: 0,
+        isLocked: true,
+        createdAt: new Date()
+      });
+
+      // 2. Update UI instantly
+      setCurriculum([...curriculum, { id: docRef.id, title, isExpanded: true, chapters: [] }]);
+    } catch (error) {
+      console.error("Error adding module:", error);
+      alert("Failed to save to database. Check console.");
+    }
+  };
+
+  // 2. ADD NEW CHAPTER
+  const handleAddChapter = async (modId) => {
+    const title = prompt("Enter Chapter Name:", "New Chapter");
+    if (!title) return;
+
+    try {
+      // 1. Save to Firebase
+      const chapRef = collection(db, `batches/${batchId}/module/${modId}/chapters`);
+      const docRef = await addDoc(chapRef, {
+        chapterName: title,
+        isLocked: true,
+        createdAt: new Date()
+      });
+
+      // 2. Update UI instantly
+      setCurriculum(prev => prev.map(m => {
+        if (m.id === modId) {
+          return { ...m, chapters: [...m.chapters, { id: docRef.id, title, isExpanded: true, items: [] }] };
+        }
+        return m;
+      }));
+    } catch (error) {
+      console.error("Error adding chapter:", error);
+    }
+  };
+
+  // 3. SAVE CONTENT (Video, Article, or Quiz)
+  const handleSaveContent = async (contentData) => {
+    setIsSaving(true);
+    const { modId, chapId } = activePlacement;
+    
+    // Determine the correct subcollection based on editorType
+    let targetCollection = '';
+    let dbPayload = {};
+
+    if (editorType === 'video') {
+      targetCollection = 'lectures';
+      dbPayload = { title: contentData.title, vimeoLink: contentData.link, type: 'video' };
+    } else if (editorType === 'article') {
+      targetCollection = 'articles';
+      dbPayload = { title: contentData.title, content: contentData.content, type: 'article' };
+    } else if (editorType === 'quiz') {
+      targetCollection = 'exercises';
+      // In reality, you'd save options to 'questions' bank and put questionIds here.
+      dbPayload = { title: contentData.title, totalQuestions: 1, type: 'quiz', questions: [contentData.quizData] };
+    }
+
+    try {
+      // 1. Save to Firebase Nested Subcollection!
+      const contentRef = collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/${targetCollection}`);
+      const docRef = await addDoc(contentRef, {
+        ...dbPayload,
+        createdAt: new Date()
+      });
+
+      // 2. Update UI instantly
+      const newItem = { id: docRef.id, type: editorType, title: dbPayload.title };
+      
+      setCurriculum(prev => prev.map(m => {
+        if (m.id === modId) {
+          return {
+            ...m,
+            chapters: m.chapters.map(c => {
+              if (c.id === chapId) {
+                return { ...c, items: [...c.items, newItem] };
+              }
+              return c;
+            })
+          };
+        }
+        return m;
+      }));
+
+      setIsDrawerOpen(false);
+    } catch (error) {
+      console.error("Error saving content:", error);
+      alert("Database error. Are your Firestore rules set up?");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // UI HANDLERS
+  // ----------------------------------------------------
+  const toggleModule = (modId) => {
+    setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, isExpanded: !m.isExpanded } : m));
+  };
+
+  const toggleChapter = (modId, chapId) => {
+    setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, chapters: m.chapters.map(c => c.id === chapId ? { ...c, isExpanded: !c.isExpanded } : c) } : m));
+  };
+
+  const openEditor = (type, modId, chapId) => {
+    setEditorType(type);
+    setActivePlacement({ modId, chapId });
+    setIsDrawerOpen(true);
+  };
+
+  // ----------------------------------------------------
+  // RENDER: CURRICULUM TREE
+  // ----------------------------------------------------
+  const renderTree = () => {
+    return (
+      <div className="space-y-6">
+        {curriculum.map((mod) => (
+          <div key={mod.id} className={`rounded-[24px] border overflow-hidden transition-all shadow-sm
+            ${isDarkMode ? 'bg-[#151E2E]/50 border-slate-800' : 'bg-white border-slate-200'}`}>
+            
+            {/* MODULE HEADER */}
+            <div className={`p-4 lg:p-5 flex items-center justify-between group
+              ${isDarkMode ? 'bg-[#151E2E] hover:bg-slate-800/80' : 'bg-slate-50 hover:bg-slate-100'}`}>
+              <div className="flex items-center gap-4">
+                <button className={`cursor-grab p-1.5 rounded-lg opacity-50 group-hover:opacity-100 ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-200'}`}>
+                  <GripVertical size={18} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
+                </button>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-inner
+                  ${isDarkMode ? 'bg-slate-800 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
+                  <FolderOpen size={20} />
+                </div>
+                <h3 className={`font-black text-lg ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{mod.title}</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={() => handleAddChapter(mod.id)} className={`px-4 py-2 text-xs font-bold rounded-lg border transition-colors
+                  ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900'}`}>
+                  + Add Chapter
+                </button>
+                <button onClick={() => toggleModule(mod.id)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}>
+                  <ChevronDown size={20} className={`transition-transform duration-300 ${mod.isExpanded ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* CHAPTERS CONTAINER */}
+            {mod.isExpanded && (
+              <div className={`p-4 lg:p-6 space-y-4 border-t ${isDarkMode ? 'border-slate-800 bg-[#0B1121]/30' : 'border-slate-200 bg-white'}`}>
+                {mod.chapters.map((chap) => (
+                  <div key={chap.id} className={`rounded-2xl border ${isDarkMode ? 'border-slate-700/60 bg-[#151E2E]/80' : 'border-slate-200 bg-slate-50'}`}>
+                    
+                    {/* CHAPTER HEADER */}
+                    <div className="p-4 flex items-center justify-between border-b border-transparent hover:border-slate-700/50 group transition-colors">
+                      <div className="flex items-center gap-3">
+                        <button className={`cursor-grab p-1 rounded opacity-30 group-hover:opacity-100 ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-200'}`}>
+                          <GripVertical size={16} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
+                        </button>
+                        <Layers size={18} className={isDarkMode ? 'text-indigo-400' : 'text-indigo-600'} />
+                        <h4 className={`font-bold text-base ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{chap.title}</h4>
+                      </div>
+                      <button onClick={() => toggleChapter(mod.id, chap.id)} className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}>
+                        <ChevronDown size={18} className={`transition-transform duration-300 ${chap.isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+
+                    {/* ITEMS LIST */}
+                    {chap.isExpanded && (
+                      <div className={`p-3 border-t ${isDarkMode ? 'border-slate-700/60' : 'border-slate-200'}`}>
+                        <div className="space-y-2 mb-4">
+                          {chap.items.length === 0 && (
+                            <div className={`text-center py-4 text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>No content yet</div>
+                          )}
+                          {chap.items.map(item => (
+                            <div key={item.id} className={`p-3 rounded-xl flex items-center justify-between group transition-colors cursor-pointer border border-transparent
+                              ${isDarkMode ? 'hover:bg-slate-800/80 hover:border-slate-700' : 'hover:bg-white hover:border-slate-200 hover:shadow-sm'}`}>
+                              <div className="flex items-center gap-3 ml-2">
+                                <div className={`p-1.5 rounded-lg ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                                  {item.type === 'video' && <PlaySquare size={16} className="text-emerald-400"/>}
+                                  {item.type === 'article' && <FileText size={16} className="text-amber-400"/>}
+                                  {item.type === 'quiz' && <HelpCircle size={16} className="text-rose-400"/>}
+                                </div>
+                                <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{item.title}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* ADD CONTENT BUTTONS */}
+                        <div className={`pt-3 border-t border-dashed flex gap-2 ml-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-300'}`}>
+                          <button onClick={() => openEditor('video', mod.id, chap.id)} className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800/50 text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-400' : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'}`}>
+                            <Plus size={14}/> Video
+                          </button>
+                          <button onClick={() => openEditor('article', mod.id, chap.id)} className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800/50 text-slate-400 hover:bg-amber-500/10 hover:text-amber-400' : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-600'}`}>
+                            <Plus size={14}/> Article
+                          </button>
+                          <button onClick={() => openEditor('quiz', mod.id, chap.id)} className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 ${isDarkMode ? 'bg-slate-800/50 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400' : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600'}`}>
+                            <Plus size={14}/> Question
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ----------------------------------------------------
+  // RENDER: THE CONTENT EDITORS (SLIDE-OUT DRAWER)
+  // ----------------------------------------------------
+  const renderEditorDrawer = () => {
+    if (!isDrawerOpen) return null;
+
+    const [title, setTitle] = useState('');
+    const [link, setLink] = useState('');
+    const [content, setContent] = useState('');
+    
+    // Quiz specific state
+    const [quizPrompt, setQuizPrompt] = useState('');
+    const [options, setOptions] = useState([{id: 1, text: '', isCorrect: true}, {id: 2, text: '', isCorrect: false}]);
+
+    const headerConfig = {
+      video: { title: 'Add Video Lesson', icon: <PlaySquare size={20} className="text-emerald-400" />, color: 'emerald' },
+      article: { title: 'Add Reading Material', icon: <FileText size={20} className="text-amber-400" />, color: 'amber' },
+      quiz: { title: 'The Question Forge', icon: <HelpCircle size={20} className="text-rose-400" />, color: 'rose' }
+    }[editorType];
+
+    const submitContent = () => {
+      handleSaveContent({
+        title,
+        link,
+        content,
+        quizData: { prompt: quizPrompt, options }
+      });
+    };
+
+    return (
+      <div className="fixed inset-0 z-[100] flex justify-end">
+        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsDrawerOpen(false)}></div>
+        
+        <div className={`relative w-full max-w-2xl border-l h-full flex flex-col animate-in slide-in-from-right duration-300 shadow-2xl
+          ${isDarkMode ? 'bg-[#0B1121] border-slate-800' : 'bg-white border-slate-200'}`}>
+          
+          <div className={`p-6 border-b flex justify-between items-center shrink-0 ${isDarkMode ? 'border-slate-800 bg-[#151E2E]' : 'border-slate-200 bg-slate-50'}`}>
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl bg-${headerConfig.color}-500/10`}>
+                {headerConfig.icon}
+              </div>
+              <div>
+                <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{headerConfig.title}</h2>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Saving to Database</p>
+              </div>
+            </div>
+            <button onClick={() => setIsDrawerOpen(false)} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100'}`}>
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-8 custom-scrollbar">
+            <div>
+              <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Internal Title</label>
+              <input 
+                type="text" placeholder={`e.g., Intro to ${editorType}...`}
+                value={title} onChange={(e) => setTitle(e.target.value)}
+                className={`w-full p-4 rounded-2xl border text-base font-bold outline-none transition-all
+                  ${isDarkMode ? 'bg-[#151E2E] border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-400'}`}
+              />
+            </div>
+
+            {editorType === 'video' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div>
+                  <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 flex items-center gap-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <LinkIcon size={14}/> Video Link (Vimeo Pro / Mux)
+                  </label>
+                  <input type="text" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://" className={`w-full p-4 rounded-2xl border text-sm font-medium outline-none ${isDarkMode ? 'bg-[#151E2E] border-slate-700 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-900'}`} />
+                </div>
+              </div>
+            )}
+
+            {editorType === 'article' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div>
+                  <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 flex items-center gap-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <Type size={14}/> Rich Text Content
+                  </label>
+                  <textarea value={content} onChange={(e) => setContent(e.target.value)} rows="10" placeholder="Start writing the lesson..." className={`w-full p-4 rounded-2xl border text-sm font-medium outline-none resize-none ${isDarkMode ? 'bg-[#151E2E] border-slate-700 text-white focus:border-amber-500' : 'bg-slate-50 border-slate-200 text-slate-900'}`} />
+                </div>
+              </div>
+            )}
+
+            {editorType === 'quiz' && (
+              <div className="space-y-8 animate-in fade-in">
+                <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 flex items-center gap-2 ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>
+                    <Type size={14}/> Main Prompt
+                  </label>
+                  <input type="text" value={quizPrompt} onChange={(e) => setQuizPrompt(e.target.value)} placeholder="e.g., Choose the correct reading..." className={`w-full p-4 rounded-2xl border text-lg font-bold outline-none mb-6 ${isDarkMode ? 'bg-[#0B1121] border-slate-700 text-white focus:border-rose-500' : 'bg-slate-50 border-slate-200 focus:border-rose-400'}`} />
+                </div>
+
+                <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+                  <label className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 mb-4 ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>
+                    <CheckCircle2 size={14}/> Answer Options
+                  </label>
+                  <div className="space-y-3">
+                    {options.map((opt, idx) => (
+                      <div key={opt.id} className={`flex items-center p-3 rounded-2xl border-2 transition-all ${opt.isCorrect ? 'border-emerald-500 bg-emerald-500/10' : isDarkMode ? 'border-slate-700 bg-[#0B1121]' : 'border-slate-200 bg-slate-50'}`}>
+                        <button onClick={() => setOptions(options.map(o => ({...o, isCorrect: o.id === opt.id})))} className={`p-2 shrink-0 ${opt.isCorrect ? 'text-emerald-500' : 'text-slate-500 hover:text-slate-300'}`}>
+                          {opt.isCorrect ? <CheckCircle2 size={22}/> : <Circle size={22}/>}
+                        </button>
+                        <div className="w-px h-6 bg-slate-700 mx-2"></div>
+                        <input type="text" value={opt.text} onChange={(e) => setOptions(options.map(o => o.id === opt.id ? {...o, text: e.target.value} : o))} placeholder={`Option ${idx + 1}`} className={`flex-1 bg-transparent border-none outline-none font-bold text-base px-2 ${isDarkMode ? 'text-white' : 'text-slate-900'} ${opt.isCorrect ? 'text-emerald-400' : ''}`} />
+                      </div>
+                    ))}
+                    <button onClick={() => setOptions([...options, {id: Date.now(), text: '', isCorrect: false}])} className={`w-full py-3 rounded-xl border border-dashed font-bold text-sm mt-2 transition-colors ${isDarkMode ? 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}>
+                      + Add Option
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={`p-6 border-t shrink-0 ${isDarkMode ? 'border-slate-800 bg-[#151E2E]' : 'border-slate-200 bg-white'}`}>
+            <button 
+              onClick={submitContent}
+              disabled={isSaving}
+              className={`w-full py-4 text-white font-black text-lg rounded-2xl transition-all shadow-xl flex items-center justify-center gap-2
+                ${isSaving ? 'opacity-70 cursor-not-allowed bg-slate-700' : 'bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-400 hover:to-pink-500 shadow-rose-600/20 active:scale-95'}`}
+            >
+              {isSaving ? <><Loader2 size={20} className="animate-spin"/> Saving to DB...</> : <><Save size={20} /> Save to Database</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full h-full space-y-8 animate-in fade-in duration-500">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className={`text-3xl font-black tracking-tight mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Curriculum Map Builder</h2>
+          <p className={`font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Changes made here are instantly pushed to your live Firebase database.</p>
+        </div>
+        <button onClick={handleAddModule} className="px-6 py-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white font-bold rounded-xl shadow-lg shadow-rose-500/20 hover:scale-105 transition-transform flex items-center gap-2">
+          <Plus size={18} /> New Module
+        </button>
+      </div>
+
+      {renderTree()}
+      {renderEditorDrawer()}
+    </div>
+  );
+}

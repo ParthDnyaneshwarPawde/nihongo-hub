@@ -90,6 +90,24 @@ function LightningKanji({ text, position, rotation, delay, scale = 1, zOffset = 
 }
 
 export default function BackgroundCanvas({ isDarkMode }) {
+  const [isMobile, setIsMobile] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (isMobile) {
+    return (
+      <div className={`fixed inset-0 z-0 pointer-events-none w-full h-full overflow-hidden ${isDarkMode ? 'bg-[#0A0F1C]' : 'bg-[#F8FAFC]'}`}>
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 to-transparent"></div>
+        {/* Simplified 2D particles using absolute divs could go here, but a rich gradient handles the fallback nicely */}
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-0 pointer-events-none w-full h-full overflow-hidden" 
          style={{ pointerEvents: 'none' }}>
@@ -98,7 +116,7 @@ export default function BackgroundCanvas({ isDarkMode }) {
         eventSource={typeof window !== 'undefined' ? document.body : undefined} 
         eventPrefix="client" 
         camera={{ position: [0, 0, 20], fov: 45 }}
-        dpr={[1, 1.5]} 
+        dpr={[1, 2]} 
         performance={{ min: 0.5 }} 
       >
         <Suspense fallback={null}>

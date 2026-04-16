@@ -64,9 +64,26 @@ function WormholeParticles({ count = 2000 }) {
 }
 
 export default function AuthBackground() {
+  const [isMobile, setIsMobile] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  if (isMobile) {
+    return (
+      <div className="absolute inset-0 z-0 bg-[#020617] overflow-hidden pointer-events-none">
+         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/30 via-[#020617] to-[#020617]"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="absolute inset-0 z-0 bg-[#020617] overflow-hidden pointer-events-none">
-      <Canvas camera={{ position: [0, 0, 15], fov: 60 }}>
+      <Canvas camera={{ position: [0, 0, 15], fov: 60 }} dpr={[1, 2]}>
         <fog attach="fog" args={['#020617', 5, 25]} />
         <WormholeParticles />
       </Canvas>

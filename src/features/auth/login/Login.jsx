@@ -28,7 +28,7 @@ export default function Login() {
 
           {/* Left Side: Branding */}
           <div className="space-y-6 hidden md:block">
-            <h1 className="text-6xl lg:text-7xl font-black text-slate-900 leading-[1.05] tracking-tighter">
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-slate-900 leading-[1.05] tracking-tighter">
               Master Japanese <br />
               <span className="text-indigo-600 underline decoration-indigo-100">Real-Time.</span>
             </h1>

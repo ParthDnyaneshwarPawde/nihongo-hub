@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
-  Bell, Info, Lock, X, ChevronRight, BookOpen, Mic2, MessageSquare, Loader2, ShieldCheck
+  Bell, Info, Lock, X, PlayCircle, ChevronRight, Download, BookOpen, Mic2, MessageSquare, Loader2, ShieldCheck, Zap, FileText, Globe
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,6 +19,7 @@ import { EventCard, ModuleCard, NewsItem, SeatStat } from './components/Dashboar
 import ResourceVault from '@features/student/StudentDashboard/ResourceVault/ResourceVault';
 import CalendarPage from '@features/student/StudentDashboard/CalendarPage';
 import LogoutShield from '@components/shared/LogoutShield';
+import ExamHub from '@features/student/ExamEngine/ExamHub';
 
 export default function StudentDashboard() {
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -31,6 +32,8 @@ export default function StudentDashboard() {
     setIsSidebarOpen,
     isCourseMenuOpen,
     setIsCourseMenuOpen,
+    isDesktopSidebarCollapsed,
+    setIsDesktopSidebarCollapsed,
     handleTabClick
   } = useStudentNavigation();
 
@@ -92,10 +95,12 @@ export default function StudentDashboard() {
       <StudentZenCanvas isDarkMode={isDarkMode} />
 
       {/* LAYER 2: SIDEBAR */}
-      <div className="z-[20]">
+      <div className="z-[20] h-full shrink-0">
         <StudentSidebar 
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
+          isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
+          setIsDesktopSidebarCollapsed={setIsDesktopSidebarCollapsed}
           activeTab={activeTab}
           handleTabClick={handleTabClick}
           isDarkMode={isDarkMode}
@@ -123,30 +128,80 @@ export default function StudentDashboard() {
         <div className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar relative">
           
           {latestBulletin && (
-            <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 p-4 bg-indigo-600 rounded-3xl flex items-center justify-between shadow-xl shadow-indigo-600/20">
-              <div className="flex items-center gap-4 px-4">
-                <div className="p-2 bg-white/20 rounded-xl text-white">
-                  <Bell className="animate-bounce" size={20} />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest">Global Bulletin</p>
-                  <p className="text-white font-bold">{latestBulletin.message}</p>
-                </div>
+          <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 p-4 bg-indigo-600 rounded-3xl flex items-center justify-between shadow-xl shadow-indigo-600/20">
+            <div className="flex items-center gap-4 px-4">
+              <div className="p-2 bg-white/20 rounded-xl text-white shrink-0">
+                <Bell className="animate-bounce" size={20} />
               </div>
-              <button onClick={() => setLatestBulletin(null)} className="p-3 text-indigo-200 hover:text-white transition-colors">
-                <X size={20} />
-              </button>
-            </motion.div>
-          )}
+              <div className="min-w-0">
+                {/* 👇 Title goes here */}
+                <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest truncate">
+                  {latestBulletin.title || "Global Bulletin"}
+                </p>
+                {/* 👇 Message goes here */}
+                <p className="text-white font-bold truncate max-w-md lg:max-w-2xl">
+                  {latestBulletin.message}
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setLatestBulletin(null)} className="p-3 text-indigo-200 hover:text-white transition-colors shrink-0">
+              <X size={20} />
+            </button>
+          </motion.div>
+        )}
 
           {/* LAYER 1: DEPTH DISSOLVE CONTENT STAGE */}
           <AnimatePresence mode="wait">
             {activeTab === 'learn' && (
               <motion.div key="learn" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-12">
+
+                {/* 🔥 CHRONOLOGICAL PATH: RESUME JOURNEY HERO */}
+{/* <section className="mb-12">
+  <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 md:gap-0 mb-6">
+    <div>
+      <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-2">My Enrolled Batch</h3>
+      <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{level} Masterclass</h2>
+    </div>
+  </div>
+
+  <div className={`relative overflow-hidden rounded-[32px] border p-8 lg:p-12 transition-all shadow-xl group
+    ${isDarkMode ? 'bg-gradient-to-br from-[#151E2E] to-[#0B1121] border-slate-800' : 'bg-gradient-to-br from-indigo-600 to-violet-600 border-transparent text-white'}`}>
+    
+    <div className="absolute right-0 top-0 w-64 h-64 bg-white/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+
+    <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+      <div className="flex-1">
+        <div className="flex items-center gap-3 mb-4">
+          <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/20 text-indigo-100'}`}>Up Next</span>
+          <span className={`text-sm font-bold ${isDarkMode ? 'text-slate-400' : 'text-indigo-200'}`}>Module 1 • Chapter 1</span>
+        </div>
+        
+        <h3 className="text-3xl lg:text-4xl font-black mb-3 leading-tight text-white">Mastering the 'Water' Radical</h3>
+        <p className={`text-base font-medium max-w-xl ${isDarkMode ? 'text-slate-400' : 'text-indigo-100'}`}>Pick up right where you left off. In this video, Sensei covers the top 5 kanji utilizing the water radical.</p>
+
+        <div className="mt-8 max-w-md">
+          <div className="flex justify-between items-center mb-2">
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-indigo-200'}`}>Batch Progress</span>
+            <span className="text-xs font-bold text-white">34%</span>
+          </div>
+          <div className={`h-2 rounded-full overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-black/20'}`}>
+            <div className="h-full bg-emerald-400 rounded-full" style={{ width: '34%' }}></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0">
+        <button onClick={() => navigate('/lecture')} className={`w-full lg:w-auto px-10 py-5 rounded-2xl font-black text-lg transition-all active:scale-95 flex items-center justify-center gap-3 shadow-2xl ${isDarkMode ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-600/20' : 'bg-white text-indigo-600 hover:bg-slate-50 shadow-black/10 hover:shadow-xl'}`}>
+          <PlayCircle size={24} /> Resume Journey
+        </button>
+      </div>
+    </div>
+  </div>
+</section> */}
                  <QuickStats level={level} isDarkMode={isDarkMode} />
 
                  <section>
-                    <div className="flex justify-between items-end mb-8">
+                    <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 md:gap-0 mb-8">
                       <div>
                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Live Academy</h3>
                         <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Upcoming Sessions</h2>
@@ -188,7 +243,7 @@ export default function StudentDashboard() {
                   </section>
 
                   <section>
-                    <div className="flex justify-between items-end mb-8">
+                    <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 md:gap-0 mb-8">
                       <div>
                         <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.3em] mb-2">Campus News</h3>
                         <h2 className={`text-2xl lg:text-3xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Official Bulletins</h2>
@@ -202,21 +257,27 @@ export default function StudentDashboard() {
                       {bulletins.length > 0 ? (
                         <div className={`divide-y divide-slate-100 dark:divide-slate-800 border rounded-[40px] overflow-hidden ${isDarkMode ? 'bg-[#0B1120] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                           {bulletins.slice(0, 3).map((msg, index) => (
-                            <div key={msg.id} onClick={() => setViewingBulletin(msg)} className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                              <div className="flex items-start gap-6">
-                                <div className={`p-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Bell size={24} /></div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-3 mb-1">
-                                    <h4 className={`text-lg font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{msg.message}</h4>
-                                    {index === 0 && <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-md uppercase tracking-tighter shrink-0">New</span>}
-                                  </div>
-                                  <p className="text-sm text-slate-500 line-clamp-1 font-medium mb-2">{msg.message}</p>
-                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{msg.sender || "Sensei"} • {msg.createdAt?.toDate().toLocaleDateString()}</p>
-                                </div>
-                              </div>
-                              <ChevronRight size={20} className="text-slate-300 hidden md:block" />
-                            </div>
-                          ))}
+  <div key={msg.id} onClick={() => setViewingBulletin(msg)} className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50">
+    <div className="flex items-start gap-6">
+      <div className={`p-4 rounded-2xl shrink-0 ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+        <Bell size={24} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-3 mb-1">
+          {/* 👇 The Title goes here in the bold h4 tag */}
+          <h4 className={`text-lg font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            {msg.title || "Official Announcement"}
+          </h4>
+          {index === 0 && <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-md uppercase tracking-tighter shrink-0">New</span>}
+        </div>
+        {/* 👇 The Message stays here as the descriptive subtitle */}
+        <p className="text-sm text-slate-500 line-clamp-1 font-medium mb-2">{msg.message}</p>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{msg.sender || "Sensei"} • {msg.createdAt?.toDate().toLocaleDateString()}</p>
+      </div>
+    </div>
+    <ChevronRight size={20} className="text-slate-300 hidden md:block" />
+  </div>
+))}
                         </div>
                       ) : (
                         <div className="p-20 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[40px]">
@@ -230,7 +291,11 @@ export default function StudentDashboard() {
                   {/* Curriculum & Side Widgets */}
                   <section className="grid grid-cols-1 xl:grid-cols-3 gap-10">
                     <div className="xl:col-span-2 space-y-10">
-                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Course Path</h3>
+                      {/* <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Course Path</h3> */}
+                      <div>
+  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Practice Dojo</h3>
+  <h2 className={`text-2xl lg:text-3xl font-black tracking-tight mb-8 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Skill-Based Practice</h2>
+</div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <ModuleCard icon={<BookOpen size={24}/>} title="Vocabulary" sub="Tango" progress={82} items="3,200 Words" isDark={isDarkMode} color="bg-indigo-600" />
                         <ModuleCard icon={<Zap size={24}/>} title="Grammar" sub="Bunpou" progress={45} items="140 Patterns" isDark={isDarkMode} color="bg-blue-600" />
@@ -276,6 +341,44 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                   </section>
+                  {/* Resource Preview */}
+
+                  <section>
+                    <div className={`p-6 rounded-2xl border flex items-center justify-between transition-all hover:border-indigo-500/50 cursor-pointer ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <Download size={20} className={isDarkMode ? 'text-white' : 'text-white'}/>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Minna no Nihongo</p>
+                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">PDF Ready</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-slate-400" />
+              </div>
+                  </section>
+              
+
+
+          {/* 5. MOCK TEST PREMIUM UPSELL */}
+          <section className="bg-[#0B1120] border border-slate-800 rounded-[48px] p-8 lg:p-20 text-center relative overflow-hidden shadow-2xl">
+            <div className="relative z-10 max-w-2xl mx-auto space-y-8 animate-in zoom-in duration-1000">
+              <div className="inline-flex items-center gap-3 px-5 py-2 bg-indigo-500/10 rounded-full border border-indigo-500/20">
+                <Lock size={16} className="text-indigo-400" />
+                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">Premium Curriculum</span>
+              </div>
+              <h2 className="text-4xl lg:text-6xl font-black text-white tracking-tighter leading-tight">Unlimited Mock Tests.</h2>
+              <p className="text-slate-400 text-lg lg:text-xl font-medium leading-relaxed opacity-80">
+                Access full-length timed JLPT mock papers (N5-N1), instant scoring, and AI-powered performance analysis to crush the actual exam.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+                <button className="px-12 py-5 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/30 active:scale-95">Upgrade Now</button>
+                <button className="px-12 py-5 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-700 transition-all border border-slate-700 active:scale-95">View Sample Test</button>
+              </div>
+            </div>
+            {/* Background Grid Pattern */}
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#4f46e5 0.8px, transparent 0.8px)', backgroundSize: '32px 32px' }}></div>
+          </section>
               </motion.div>
             )}
 
@@ -283,6 +386,19 @@ export default function StudentDashboard() {
               <motion.div key="vault" variants={pageVariants} initial="initial" animate="animate" exit="exit">
                 {isDataLoaded ? (
                   <ResourceVault selectedCourseTitle={level} enrolledCourseTitles={currentCourses} isDarkMode={isDarkMode} currentUser={currentUser}/>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-32 space-y-4">
+                    <Loader2 className="animate-spin text-indigo-500" size={40} />
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Authorizing Access...</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === 'tests' && (
+              <motion.div key="tests" variants={pageVariants} initial="initial" animate="animate" exit="exit">
+                {isDataLoaded ? (
+                  <ExamHub isDarkMode={isDarkMode} setIsDesktopSidebarCollapsed={setIsDesktopSidebarCollapsed} />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-32 space-y-4">
                     <Loader2 className="animate-spin text-indigo-500" size={40} />
@@ -364,6 +480,142 @@ export default function StudentDashboard() {
             </motion.div>
           </motion.div>
         )}
+
+
+        {/* 👇 ADD THESE TWO NEW MODALS 👇 */}
+
+        {/* 2. View Individual Bulletin Modal */}
+        {/* 2. View Individual Bulletin Modal */}
+        {/* 2. View Individual Bulletin Modal */}
+        {viewingBulletin && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 10 }} className={`w-full max-w-lg rounded-[2.5rem] border shadow-2xl transition-colors relative overflow-hidden ${isDarkMode ? 'bg-[#0F172A] border-slate-700/50 shadow-black/50' : 'bg-white border-slate-200 shadow-indigo-900/5'}`}>
+              
+              {/* Premium Background Pattern */}
+              <div className="absolute inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
+
+              {/* Header Banner */}
+              <div className={`relative px-8 pt-8 pb-6 border-b ${isDarkMode ? 'border-slate-800 bg-slate-800/20' : 'border-slate-100 bg-slate-50/50'}`}>
+                <div className="flex justify-between items-start relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 rounded-full animate-pulse"></div>
+                      <div className="relative w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                        <Bell size={24} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Official Broadcast</p>
+                      <p className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{viewingBulletin.sender || "Sensei Panel"}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setViewingBulletin(null)} className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-900'}`}>
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Message Body */}
+              <div className="p-8 relative z-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{viewingBulletin.createdAt?.toDate().toLocaleDateString() || "Just now"}</span>
+                </div>
+                
+                {/* 👇 Title injected here */}
+                <h3 className={`text-2xl lg:text-3xl font-black mb-4 leading-tight tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {viewingBulletin.title || "Official Announcement"}
+                </h3>
+                
+                {/* 👇 Message moved down to paragraph text */}
+                <p className={`text-base lg:text-lg leading-relaxed font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                  {viewingBulletin.message}
+                </p>
+              </div>
+
+              {/* Action Footer */}
+              <div className={`px-8 py-6 border-t flex justify-end ${isDarkMode ? 'border-slate-800 bg-[#0B1120]' : 'border-slate-100 bg-slate-50'}`}>
+                <button onClick={() => setViewingBulletin(null)} className="px-8 py-3 bg-indigo-600 text-white text-sm font-black rounded-xl hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
+                  Acknowledge
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* 3. View All History Modal (Timeline Redesign) */}
+        {isHistoryModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 10 }} className={`w-full max-w-2xl h-[85vh] flex flex-col rounded-[2.5rem] border shadow-2xl transition-colors relative overflow-hidden ${isDarkMode ? 'bg-[#0F172A] border-slate-700/50 shadow-black/50' : 'bg-white border-slate-200 shadow-indigo-900/5'}`}>
+              
+              {/* Header */}
+              <div className={`p-8 border-b shrink-0 flex justify-between items-center z-10 ${isDarkMode ? 'border-slate-800 bg-[#0F172A]' : 'border-slate-100 bg-white'}`}>
+                <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Bell size={24} />
+                  </div>
+                  <div>
+                    <h3 className={`text-2xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Bulletin Archive</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{bulletins.length} Total Messages</p>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setIsHistoryModalOpen(false)} className={`p-2.5 rounded-xl border transition-all ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-rose-400' : 'border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-rose-500'}`}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable Timeline */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 relative z-10">
+                {bulletins.length > 0 ? (
+                  <div className={`relative pl-6 border-l-2 ml-4 space-y-10 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                    {bulletins.map((msg, idx) => (
+                      <div key={msg.id} className="relative group">
+                        {/* Timeline Dot */}
+                        <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-4 transition-colors ${idx === 0 ? 'bg-indigo-500 border-indigo-100 dark:border-indigo-900/50' : isDarkMode ? 'bg-slate-700 border-[#0F172A]' : 'bg-slate-300 border-white'}`}></div>
+                        
+                        {/* Interactive Card */}
+                        <div onClick={() => { setIsHistoryModalOpen(false); setViewingBulletin(msg); }} className={`p-6 rounded-3xl border transition-all cursor-pointer ${isDarkMode ? 'bg-[#0B1120] border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-200 shadow-sm hover:border-indigo-300 hover:shadow-md'}`}>
+                          <div className="flex justify-between items-start mb-3">
+                            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{msg.sender || "Sensei"}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{msg.createdAt?.toDate().toLocaleDateString() || "Recently"}</span>
+                          </div>
+                          
+                          {/* 👇 Title injected here */}
+                          <h4 className={`font-black text-base mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                            {msg.title || "Announcement"}
+                          </h4>
+                          
+                          {/* 👇 Message line-clamped beneath */}
+                          <p className={`font-medium text-sm leading-relaxed line-clamp-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>{msg.message}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  // Premium Empty State
+                  <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
+                    <div className="relative w-32 h-32 mb-8">
+                      <div className="absolute inset-0 bg-indigo-500/5 rounded-full animate-ping"></div>
+                      <div className={`absolute inset-4 rounded-3xl border border-dashed flex items-center justify-center rotate-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-300'}`}>
+                        <Bell size={32} className="text-slate-400 -rotate-3" />
+                      </div>
+                      <div className={`absolute -right-2 -bottom-2 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg ${isDarkMode ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'}`}>
+                        <X size={20} />
+                      </div>
+                    </div>
+                    <h3 className={`text-xl font-black tracking-tight mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Inbox is Clear</h3>
+                    <p className="text-sm font-medium text-slate-500 leading-relaxed">There are currently no archived bulletins or announcements for your learning level.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+
       </AnimatePresence>
 
       <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={isDarkMode} />

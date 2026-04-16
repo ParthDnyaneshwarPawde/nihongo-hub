@@ -4,6 +4,7 @@ export function useStudentNavigation() {
   const [activeTab, setActiveTab] = useState('learn');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCourseMenuOpen, setIsCourseMenuOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
 
   const handleTabClick = (tab) => {
     setActiveTab(tab);
@@ -17,6 +18,8 @@ export function useStudentNavigation() {
     setIsSidebarOpen,
     isCourseMenuOpen,
     setIsCourseMenuOpen,
+    isDesktopSidebarCollapsed,
+    setIsDesktopSidebarCollapsed,
     handleTabClick
   };
 }

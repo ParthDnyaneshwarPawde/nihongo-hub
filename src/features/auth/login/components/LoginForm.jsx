@@ -37,7 +37,7 @@ export default function LoginForm({
         </div>
       </div>
 
-      <button type="submit" disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-600/30 transition-all active:scale-95 mt-2 disabled:opacity-50">
+      <button type="submit" disabled={loading} className="w-full md:w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-600/30 transition-all active:scale-95 mt-2 disabled:opacity-50">
         SIGN IN
       </button>
     </form>

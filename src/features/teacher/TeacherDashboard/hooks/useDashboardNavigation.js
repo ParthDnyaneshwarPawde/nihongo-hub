@@ -3,6 +3,7 @@ import { useState } from 'react';
 export function useDashboardNavigation(initialTab = 'dashboard') {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
 
   const handleNavigate = (tab) => {
     setActiveTab(tab);
@@ -13,5 +14,5 @@ export function useDashboardNavigation(initialTab = 'dashboard') {
   const closeSidebar = () => setIsSidebarOpen(false);
   const openSidebar = () => setIsSidebarOpen(true);
 
-  return { activeTab, isSidebarOpen, handleNavigate, toggleSidebar, closeSidebar, openSidebar };
+  return { activeTab, isSidebarOpen, handleNavigate, toggleSidebar, closeSidebar, openSidebar, isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed };
 }

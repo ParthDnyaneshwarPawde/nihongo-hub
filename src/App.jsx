@@ -11,11 +11,15 @@ import Onboarding from '@features/auth/onboarding/Onboarding';
 import StudentDashboard from '@features/student/StudentDashboard/StudentDashboard';
 import CourseCatalog from '@features/student/StudentDashboard/CourseCatalog';
 import ProfileSettings from '@features/student/StudentDashboard/ProfileSettings';
+import ExamEngine from '@features/student/ExamEngine/ExamEngine'; // 🚨 NEW IMPORT
 import TeacherDashboard from '@features/teacher/TeacherDashboard/TeacherDashboard';
 import TeacherBatches from '@features/teacher/TeacherDashboard/TeacherBatches/TeacherBatches';
 import LiveClassrooms from '@features/teacher/TeacherDashboard/LiveClassrooms/LiveClassrooms';
 import Room from '@features/teacher/TeacherDashboard/services/Room';
 import ProtectedRoute from '@components/shared/ProtectedRoute';
+import ExamHub from '@features/student/ExamEngine/ExamHub';
+import QuestionForge from '@features/teacher/TeacherDashboard/ExamManagement/QuestionForge';
+import LectureViewer from '@features/student/StudentDashboard/CourseContent/LectureViewer';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -98,6 +102,14 @@ function App() {
         </ProtectedRoute>
       } />
 
+
+
+<Route path="/lecture" element={
+  <ProtectedRoute requiredRole="student">
+    <LectureViewer />
+  </ProtectedRoute>
+} />
+
       <Route path="/live-classrooms" element={
         <ProtectedRoute requiredRole="teacher">
           <LiveClassrooms isDarkMode={isDarkMode} />
@@ -116,11 +128,29 @@ function App() {
         </ProtectedRoute>
       } />
 
+      <Route path="/questionforge" element={
+        <ProtectedRoute requiredRole="teacher">
+          <QuestionForge />
+        </ProtectedRoute>
+      } />
+
       <Route path="/profile-settings" element={
         <ProtectedRoute requiredRole="student">
           <ProfileSettings />
         </ProtectedRoute>
       } />
+
+      {/* 🚨 NEW ROUTE FOR THE EXAM ENGINE */}
+      <Route path="/test-engine" element={
+        <ProtectedRoute requiredRole="student">
+          <ExamEngine />
+        </ProtectedRoute>
+      } />
+      <Route path="/tests" element={
+  <ProtectedRoute requiredRole="student">
+    <ExamHub />
+  </ProtectedRoute>
+} />
       
       <Route path="/room/:roomID" element={
         window.location.search.includes('role=guest') 
