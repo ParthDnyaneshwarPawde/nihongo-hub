@@ -1,42 +1,51 @@
 import React, { useState, useEffect } from 'react';
-import { Map, Database, Users, Settings, ArrowLeft, ExternalLink } from 'lucide-react';
+import { 
+  Map, Database, Users, Settings, ArrowLeft, ExternalLink, Target 
+} from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-dom'; // Note: Usually 'react-router-dom'
 import { useStickyState } from '@/hooks/useStickyState';
-// 🚨 IMPORT YOUR TWO NEW FUNCTIONAL COMPONENTS HERE:
-// Make sure BatchVaultEditor.jsx and BatchRoster.jsx are saved in the same folder!
+
+// 🚨 IMPORT FIREBASE DB (Required for your user profile fetch)
+import { db } from '@services/firebase';
+
+// 🚨 IMPORT YOUR FUNCTIONAL COMPONENTS HERE:
 import BatchVaultEditor from '@features/teacher/TeacherDashboard/TeacherBatches/BatchVaultEditor'; 
 import BatchRoster from '@features/teacher/TeacherDashboard/TeacherBatches/BatchRoster';    
 import BatchSettings from '@features/teacher/TeacherDashboard/TeacherBatches/BatchSettings';           
 import PathBuilderEngine from '@features/teacher/TeacherDashboard/TeacherBatches/PathBuilderEngine';
 
+// Placeholder for your Dojo component
+// import PracticeDojoManager from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojoManager';
+
 export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
   // We default to VAULT so you can see it immediately when it opens
   const [activeView, setActiveView] = useStickyState('VAULT', 'active-command-center-view'); 
   const [realName, setRealName] = useState("Loading...");
-  // const { batchId } = useParams();
-useEffect(() => {
-  const fetchTeacherName = async () => {
-    const auth = getAuth();
-    const user = auth.currentUser;
-    
-    if (user) {
-      // 1. Try to get name from Auth Profile first (Fastest)
-      if (user.displayName) {
-        setRealName(user.displayName);
-        return;
-      }
 
-      // 2. Otherwise, fetch from your 'users' collection in Firestore
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        setRealName(userDoc.data().name || userDoc.data().fullName);
+  useEffect(() => {
+    const fetchTeacherName = async () => {
+      const auth = getAuth();
+      const user = auth.currentUser;
+      
+      if (user) {
+        // 1. Try to get name from Auth Profile first (Fastest)
+        if (user.displayName) {
+          setRealName(user.displayName);
+          return;
+        }
+
+        // 2. Otherwise, fetch from your 'users' collection in Firestore
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setRealName(userDoc.data().name || userDoc.data().fullName);
+        }
       }
-    }
-  };
-  fetchTeacherName();
-}, []);
+    };
+    fetchTeacherName();
+  }, []);
+
   return (
     <div className={`fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-10 duration-500 ${isDarkMode ? 'bg-[#0F172A] text-white' : 'bg-slate-50 text-slate-900'}`}>
       
@@ -73,6 +82,13 @@ useEffect(() => {
             icon={<Map size={18}/>} label="Path Builder" sub="Learn Section Map" 
             isActive={activeView === 'PATH_BUILDER'} onClick={() => setActiveView('PATH_BUILDER')} isDark={isDarkMode} 
           />
+
+          {/* 🚨 NEW TAB: PRACTICE DOJO */}
+          <CommandTab 
+            icon={<Target size={18}/>} label="Practice Dojo" sub="Self-Paced Drills & Tests" 
+            isActive={activeView === 'DOJO'} onClick={() => setActiveView('DOJO')} isDark={isDarkMode} 
+          />
+
           <CommandTab 
             icon={<Database size={18}/>} label="Vault Manager" sub="PDFs, ZIPs, Audio" 
             isActive={activeView === 'VAULT'} onClick={() => setActiveView('VAULT')} isDark={isDarkMode} 
@@ -96,6 +112,20 @@ useEffect(() => {
             </div>
           )}
 
+          {/* 🚨 NEW VIEW: PRACTICE DOJO */}
+          {activeView === 'DOJO' && (
+            <div className="animate-in fade-in duration-300 flex flex-col items-center justify-center h-full text-center">
+               <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-[2rem] flex items-center justify-center rotate-3 mb-6">
+                 <Target size={40} className="-rotate-3" />
+               </div>
+               <h2 className={`text-3xl font-black mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>The Practice Dojo</h2>
+               <p className={`text-slate-500 font-medium max-w-md ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                 Manage standalone mock tests, spaced-repetition flashcards, and endless grammar drills for your students here.
+               </p>
+               {/* <PracticeDojoManager batchId={batch.id} isDarkMode={isDarkMode} /> */}
+            </div>
+          )}
+
           {/* 🚨 THE VAULT EDITOR */}
           {activeView === 'VAULT' && (
             <div className="animate-in fade-in duration-300">
@@ -112,11 +142,8 @@ useEffect(() => {
 
           {activeView === 'SETTINGS' && (
             <div className="animate-in fade-in duration-300">
-    <BatchSettings 
-       batchData={batch} 
-       isDarkMode={isDarkMode} 
-    />
-  </div>
+              <BatchSettings batchData={batch} isDarkMode={isDarkMode} />
+            </div>
           )}
 
         </main>
