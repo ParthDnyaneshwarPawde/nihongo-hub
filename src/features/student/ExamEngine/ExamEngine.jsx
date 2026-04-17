@@ -5,29 +5,30 @@ import {
   Moon, Sun, Loader2, Trophy, Target, RefreshCcw
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// 🚨 FIREBASE IMPORTS
+// 🚨 FIREBASE IMPORTS UPDATED
 import { db, auth } from '@services/firebase'; 
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+
+// 🚨 GLOBAL THEME IMPORT
+import { useTheme } from '@/context/ThemeContext'; 
 
 export default function ExamEngine() {
   const navigate = useNavigate();
   const { batchId, modId, chapId, exerciseId } = useParams();
 
-  const [isDarkMode, setIsDarkMode] = useState(true); 
+  const { isDarkMode, toggleTheme } = useTheme();
   
-  // -- Exam Lifecycle State --
-  const [examState, setExamState] = useState('loading'); // 'loading', 'intro', 'active', 'results'
+  const [examState, setExamState] = useState('loading'); 
   const [examConfig, setExamConfig] = useState(null);
   const [questions, setQuestions] = useState([]);
   
-  // -- Active Test State --
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [timeSpent, setTimeSpent] = useState(0); // Time on current question
-  const [totalTimeSpent, setTotalTimeSpent] = useState(0); // Time for whole exam
-  const [score, setScore] = useState(0); // Tracks first-attempt correct answers
+  const [timeSpent, setTimeSpent] = useState(0); 
+  const [totalTimeSpent, setTotalTimeSpent] = useState(0); 
+  const [score, setScore] = useState(0); 
   
-  // -- Settings State --
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
     alwaysShowNote: true,
@@ -39,18 +40,21 @@ export default function ExamEngine() {
     showPeerStats: true
   });
   
-  // -- Question Interaction State --
   const [selectedOpt, setSelectedOpt] = useState(null);
   const [checkStatus, setCheckStatus] = useState("idle"); 
   const [attempts, setAttempts] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
 
   // ----------------------------------------------------
-  // 📥 FETCH EXAM DATA FROM FIREBASE
+  // 📥 FETCH EXAM DATA & INITIAL PEER STATS
+  // ----------------------------------------------------
+  // ----------------------------------------------------
+  // 📥 FETCH EXAM DATA & GLOBAL PEER STATS
   // ----------------------------------------------------
   useEffect(() => {
     const loadExam = async () => {
       try {
+        // 1. Fetch the lightweight exercise document
         const exerciseRef = doc(db, 'batches', batchId, 'module', modId, 'chapters', chapId, 'exercises', exerciseId);
         const exerciseSnap = await getDoc(exerciseRef);
 
@@ -63,31 +67,55 @@ export default function ExamEngine() {
             duration: data.duration,
           });
 
-          // Map Firebase data to UI format
-          const formattedQuestions = data.questions.map(q => {
-            // Find the correct option ID
-            const correctOpt = q.options.find(o => o.isCorrect);
-            
-            // Generate dummy peer stats for UI flavor (adds up to ~100%)
-            const optionsWithStats = q.options.map(o => ({
-              ...o,
-              peerStat: Math.floor(Math.random() * 40) + 10 
-            }));
+          // 2. Extract the array of Question IDs
+          const qIds = data.questionIds || [];
 
-            return {
-              id: q.id,
-              type: q.type.replace('_', ' ').toUpperCase(),
-              prompt: q.promptText,
-              sentence: null, // Add to your builder later if needed
-              highlightedWord: null, 
-              mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
-              mediaUrl: q.mediaUrl,
-              options: optionsWithStats,
-              correctOptionId: correctOpt ? correctOpt.id : null,
-              idealTimeSeconds: q.idealTimeSeconds || 60,
-              explanation: q.officialSolution?.text || "No explanation provided."
-            };
-          });
+          if (qIds.length === 0) {
+            setQuestions([]);
+            setExamState('intro');
+            return;
+          }
+
+          // 3. 🚨 NEW: Fetch the heavy question data directly from the Question Bank!
+          const questionPromises = qIds.map(id => 
+            getDoc(doc(db, `question_bank/${batchId}/questions`, id))
+          );
+          const questionSnaps = await Promise.all(questionPromises);
+
+          // 4. Format the fetched questions for the UI
+          const formattedQuestions = questionSnaps
+            .filter(snap => snap.exists()) // Ignore any broken IDs
+            .map(snap => {
+              const q = snap.data();
+              const correctOpt = q.options?.find(o => o.isCorrect);
+              
+              // Calculate real-time global peer stats
+              const totalVotes = q.options?.reduce((sum, opt) => sum + (opt.count || 0), 0) || 0;
+              
+              const optionsWithStats = (q.options || []).map(o => {
+                const optCount = o.count || 0;
+                const peerStat = totalVotes > 0 ? Math.round((optCount / totalVotes) * 100) : 0;
+                return { 
+                  ...o, 
+                  peerStat: peerStat,
+                  count: optCount 
+                };
+              });
+
+              return {
+                id: q.id,
+                type: q.type?.replace('_', ' ').toUpperCase() || 'UNKNOWN',
+                prompt: q.promptText || '',
+                sentence: null, 
+                highlightedWord: null, 
+                mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
+                mediaUrl: q.mediaUrl || '',
+                options: optionsWithStats,
+                correctOptionId: correctOpt ? correctOpt.id : null,
+                idealTimeSeconds: q.idealTimeSeconds || 60,
+                explanation: q.officialSolution?.text || "No explanation provided."
+              };
+            });
 
           setQuestions(formattedQuestions);
           setExamState('intro');
@@ -96,13 +124,13 @@ export default function ExamEngine() {
           navigate(-1);
         }
       } catch (error) {
-        console.error("Error fetching exam:", error);
+        console.error("Error fetching exam from bank:", error);
       }
     };
 
     loadExam();
   }, [batchId, modId, chapId, exerciseId, navigate]);
-
+  
   // ⏱️ STOPWATCH TIMER
   useEffect(() => {
     let timer;
@@ -121,10 +149,8 @@ export default function ExamEngine() {
     return `${m}:${s}`;
   };
 
-  // 🔊 HARDWARE FEEDBACK
   const playSound = (type) => {
     if (!settings.playSounds) return;
-    // You can attach real Audio objects here later
     console.log(`🔊 Playing sound: ${type === 'correct' ? 'TADAN! ✨' : 'UH-OH ❌'}`);
   };
 
@@ -132,17 +158,53 @@ export default function ExamEngine() {
     if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]); 
   };
 
-  // 🧠 ANSWER LOGIC
+  // ----------------------------------------------------
+  // 🧠 ANSWER LOGIC & GLOBAL STAT UPDATE
+  // ----------------------------------------------------
   const currentQ = questions[currentIndex];
 
-  const handleCheck = () => {
+  const handleCheck = async () => {
     if (!selectedOpt) return;
 
     const isCorrect = selectedOpt === currentQ.correctOptionId;
     
-    // If they got it right on the VERY FIRST try, give them a point!
-    if (isCorrect && attempts === 0) {
-      setScore(prev => prev + 1);
+    // 🚨 FIREBASE UPDATE: Only increment on FIRST attempt
+    if (attempts === 0) {
+      if (isCorrect) setScore(prev => prev + 1);
+
+      try {
+        // 1. Find the index of the selected option in the original array
+        const selectedOptIndex = currentQ.options.findIndex(o => o.id === selectedOpt);
+        
+        if (selectedOptIndex !== -1) {
+          // 2. Update the specific option's count in the Question Bank
+          const questionRef = doc(db, `question_bank/${batchId}/questions`, currentQ.id);
+          
+          // Using dot notation to update a specific element in the array
+          await updateDoc(questionRef, {
+            [`options.${selectedOptIndex}.count`]: increment(1)
+          });
+
+          // 3. Update Local State immediately so the UI reflects the new vote
+          setQuestions(prevQuestions => prevQuestions.map(q => {
+            if (q.id === currentQ.id) {
+              const newTotalVotes = q.options.reduce((sum, o) => sum + (o.count || 0), 0) + 1;
+              const updatedOptions = q.options.map(o => {
+                const newCount = (o.count || 0) + (o.id === selectedOpt ? 1 : 0);
+                return {
+                  ...o,
+                  count: newCount,
+                  peerStat: Math.round((newCount / newTotalVotes) * 100)
+                };
+              });
+              return { ...q, options: updatedOptions };
+            }
+            return q;
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to update global peer stats:", err);
+      }
     }
 
     setAttempts(prev => prev + 1);
@@ -156,7 +218,7 @@ export default function ExamEngine() {
       playSound("incorrect");
       triggerVibration();
       if (attempts >= 0 || settings.solutionMode) {
-        setShowExplanation(true); // Show explanation if they fail
+        setShowExplanation(true); 
       }
     }
   };
@@ -189,7 +251,6 @@ export default function ExamEngine() {
   const finishExam = async () => {
     setExamState('results');
     
-    // Optional: Save results to Firebase Student Profile
     try {
       const userId = auth.currentUser?.uid;
       if (userId) {
@@ -328,17 +389,28 @@ export default function ExamEngine() {
   }
 
   // ==========================================
-  // RENDER: ACTIVE EXAM (Your beautiful UI!)
+  // RENDER: ACTIVE EXAM 
   // ==========================================
+  
+  const timerIsCritical = timeSpent > (currentQ?.idealTimeSeconds || 60);
+
   return (
     <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden relative transition-colors duration-500
       ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
       
       <div className={`absolute inset-0 pointer-events-none opacity-[0.02] ${isDarkMode ? 'invert-0' : 'invert'}`} 
-           style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }}>
+            style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }}>
       </div>
 
-      {/* --- TOP NAVBAR --- */}
+      <div className="h-1.5 bg-slate-800/50 w-full overflow-hidden shrink-0 relative z-30">
+        <motion.div 
+          className="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)]" 
+          initial={{ width: 0 }}
+          animate={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+          transition={{ type: "spring", stiffness: 50, damping: 20 }}
+        />
+      </div>
+
       <header className={`shrink-0 h-16 px-4 lg:px-6 flex items-center justify-between border-b relative z-20 transition-colors duration-500
         ${isDarkMode ? 'border-slate-800/80 bg-[#0B1121]/95 backdrop-blur-md' : 'border-slate-200 bg-white/95 backdrop-blur-md'}`}>
         
@@ -354,7 +426,7 @@ export default function ExamEngine() {
 
         <div className="flex items-center justify-center w-1/3">
           <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border shadow-sm text-sm font-black tracking-widest transition-colors duration-300 ${
-            timeSpent > currentQ.idealTimeSeconds 
+            timerIsCritical 
               ? isDarkMode 
                 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30 animate-pulse' 
                 : 'bg-rose-50 text-rose-600 border-rose-200 animate-pulse'
@@ -362,14 +434,14 @@ export default function ExamEngine() {
                 ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
                 : 'bg-white border-slate-200 text-slate-700'
           }`}>
-            <Clock size={14} className={timeSpent > currentQ.idealTimeSeconds ? 'text-rose-500' : isDarkMode ? 'text-indigo-400' : 'text-slate-400'} />
+            <Clock size={14} className={timerIsCritical ? 'text-rose-500' : isDarkMode ? 'text-indigo-400' : 'text-slate-400'} />
             {formatTime(timeSpent)}
           </div>
         </div>
 
         <div className="flex items-center justify-end gap-1 w-1/3">
           <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
+            onClick={toggleTheme}
             className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-100'}`} 
             title="Toggle Theme"
           >
@@ -388,133 +460,145 @@ export default function ExamEngine() {
         </div>
       </header>
 
-      {/* --- MAIN QUESTION STAGE --- */}
       <main className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center p-4 lg:p-10 relative z-10">
-        <div className="w-full max-w-4xl space-y-8 pb-10">
+        <div className="w-full max-w-4xl pb-10">
           
-          <div className="flex justify-between items-end">
-            <div>
-              <p className={`text-sm font-black mb-1 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Question {currentIndex + 1} of {questions.length}</p>
-              <p className={`text-xs uppercase tracking-widest font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{currentQ.type}</p>
-            </div>
-            <div className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500 shadow-sm'}`}>
-              Single Choice
-            </div>
-          </div>
-
-          <div className={`space-y-6 rounded-3xl p-6 lg:p-10 border transition-colors duration-500 shadow-sm ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white border-slate-200'}`}>
-            <h2 className={`${fontSizes.prompt} font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-              {currentQ.prompt}
-            </h2>
-            
-            {currentQ.sentence && (
-              <div className={`${fontSizes.sentence} font-black tracking-wide leading-relaxed py-6 border-y border-dashed ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-300 text-slate-900'}`}>
-                {currentQ.highlightedWord ? (
-                   currentQ.sentence.replace(`[${currentQ.highlightedWord}]`, '').split(' ').map((word, i) => (
-                     <span key={i} className="mr-2">
-                       {word === '' ? <span className="text-indigo-500 underline decoration-indigo-500/30 underline-offset-8">{currentQ.highlightedWord}</span> : word}
-                     </span>
-                   ))
-                ) : currentQ.sentence}
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={currentIndex}
+              initial={{ x: 30, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -30, opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="space-y-8"
+            >
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className={`text-sm font-black mb-1 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Question {currentIndex + 1} of {questions.length}</p>
+                  <p className={`text-xs uppercase tracking-widest font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{currentQ.type}</p>
+                </div>
+                <div className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500 shadow-sm'}`}>
+                  Single Choice
+                </div>
               </div>
-            )}
 
-            {currentQ.mediaType === 'audio' && (
-               <div className={`p-4 rounded-2xl border flex items-center gap-5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                 <button className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 active:scale-95 shrink-0">
-                   <PlayCircle size={24} className="ml-1" />
-                 </button>
-                 <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                   <div className="h-full bg-indigo-500 w-1/3 rounded-full"></div>
-                 </div>
-                 <Volume2 size={20} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
-               </div>
-            )}
-          </div>
+              <div className={`space-y-6 rounded-3xl p-6 lg:p-10 border transition-colors duration-500 shadow-sm ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white border-slate-200'}`}>
+                <h2 className={`${fontSizes.prompt} font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                  {currentQ.prompt}
+                </h2>
+                
+                {currentQ.sentence && (
+                  <div className={`${fontSizes.sentence} font-black tracking-wide leading-relaxed py-6 border-y border-dashed ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-300 text-slate-900'}`}>
+                    {currentQ.highlightedWord ? (
+                       currentQ.sentence.replace(`[${currentQ.highlightedWord}]`, '').split(' ').map((word, i) => (
+                         <span key={i} className="mr-2">
+                           {word === '' ? <span className="text-indigo-500 underline decoration-indigo-500/30 underline-offset-8">{currentQ.highlightedWord}</span> : word}
+                         </span>
+                       ))
+                    ) : currentQ.sentence}
+                  </div>
+                )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
-            {currentQ.options.map((opt, idx) => {
-              const isSelected = selectedOpt === opt.id;
-              const hasAnswered = checkStatus !== "idle";
-              const showStats = hasAnswered && settings.showPeerStats;
-              
-              let btnClass = isDarkMode 
-                ? 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800 hover:border-slate-600 text-slate-300' 
-                : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md text-slate-700';
-              let letterBg = isDarkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-500';
-              let statBarColor = isDarkMode ? 'bg-slate-600/20' : 'bg-slate-200/50';
-              
-              if (isSelected) {
-                if (checkStatus === "idle") {
-                  btnClass = isDarkMode 
-                    ? 'bg-indigo-500/10 border-indigo-500 text-indigo-100 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
-                    : 'bg-indigo-50 border-indigo-500 text-indigo-900 shadow-sm';
-                  letterBg = 'bg-indigo-600 text-white';
-                } else if (checkStatus === "correct" && !settings.delayCorrectDisplay) {
-                  btnClass = isDarkMode 
-                    ? 'bg-emerald-500/10 border-emerald-500 text-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
-                    : 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm';
-                  letterBg = 'bg-emerald-500 text-white';
-                  statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
-                } else if (checkStatus === "incorrect" && !settings.delayCorrectDisplay) {
-                  btnClass = isDarkMode 
-                    ? 'bg-rose-500/10 border-rose-500 text-rose-100 animate-shake'
-                    : 'bg-rose-50 border-rose-500 text-rose-900 animate-shake';
-                  letterBg = 'bg-rose-500 text-white';
-                }
-              } else if (hasAnswered && opt.id === currentQ.correctOptionId && !settings.delayCorrectDisplay) {
-                btnClass = isDarkMode ? 'border-emerald-500/50 text-emerald-300' : 'border-emerald-500/50 text-emerald-700 bg-emerald-50/50';
-                statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
-              }
+                {currentQ.mediaType === 'audio' && (
+                   <div className={`p-4 rounded-2xl border flex items-center gap-5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                     <button className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 active:scale-95 shrink-0">
+                       <PlayCircle size={24} className="ml-1" />
+                     </button>
+                     <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                       <div className="h-full bg-indigo-500 w-1/3 rounded-full"></div>
+                     </div>
+                     <Volume2 size={20} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
+                   </div>
+                )}
+              </div>
 
-              return (
-                <button
-                  key={opt.id}
-                  disabled={hasAnswered && checkStatus === "correct"}
-                  onClick={() => {
-                    if (checkStatus !== "correct") {
-                      setSelectedOpt(opt.id);
-                      setCheckStatus("idle");
-                    }
-                  }}
-                  className={`relative overflow-hidden p-5 rounded-2xl border-2 transition-all duration-200 flex items-center min-h-[80px] group ${btnClass}`}
-                >
-                  {showStats && (
-                    <div 
-                      className={`absolute left-0 top-0 bottom-0 transition-all duration-1000 ease-out ${statBarColor}`} 
-                      style={{ width: `${opt.peerStat}%` }} 
-                    />
-                  )}
-
-                  <span className={`relative z-10 w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0 mr-4 transition-colors ${letterBg}`}>
-                    {['A', 'B', 'C', 'D'][idx]}
-                  </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
+                {currentQ.options.map((opt, idx) => {
+                  const isSelected = selectedOpt === opt.id;
+                  const hasAnswered = checkStatus !== "idle";
+                  const showStats = hasAnswered && settings.showPeerStats;
                   
-                  <span className={`relative z-10 font-bold text-left flex-1 ${fontSizes.options}`}>
-                    {opt.text}
-                  </span>
+                  let btnClass = isDarkMode 
+                    ? 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800 hover:border-slate-600 text-slate-300' 
+                    : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md text-slate-700';
+                  let letterBg = isDarkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-500';
+                  let statBarColor = isDarkMode ? 'bg-slate-600/20' : 'bg-slate-200/50';
+                  
+                  if (isSelected) {
+                    if (checkStatus === "idle") {
+                      btnClass = isDarkMode 
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-100 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+                        : 'bg-indigo-50 border-indigo-500 text-indigo-900 shadow-sm';
+                      letterBg = 'bg-indigo-600 text-white';
+                    } else if (checkStatus === "correct" && !settings.delayCorrectDisplay) {
+                      btnClass = isDarkMode 
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+                        : 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm';
+                      letterBg = 'bg-emerald-500 text-white';
+                      statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
+                    } else if (checkStatus === "incorrect" && !settings.delayCorrectDisplay) {
+                      btnClass = isDarkMode 
+                        ? 'bg-rose-500/10 border-rose-500 text-rose-100 animate-shake'
+                        : 'bg-rose-50 border-rose-500 text-rose-900 animate-shake';
+                      letterBg = 'bg-rose-500 text-white';
+                    }
+                  } else if (hasAnswered && opt.id === currentQ.correctOptionId && !settings.delayCorrectDisplay) {
+                    btnClass = isDarkMode ? 'border-emerald-500/50 text-emerald-300' : 'border-emerald-500/50 text-emerald-700 bg-emerald-50/50';
+                    statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
+                  }
 
-                  {showStats && (
-                    <span className={`relative z-10 text-xs font-black ml-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {opt.peerStat}%
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                  return (
+                    <button
+                      key={opt.id}
+                      disabled={hasAnswered && checkStatus === "correct"}
+                      onClick={() => {
+                        if (checkStatus !== "correct") {
+                          setSelectedOpt(opt.id);
+                          setCheckStatus("idle");
+                        }
+                      }}
+                      className={`relative overflow-hidden p-5 rounded-2xl border-2 transition-all duration-200 flex items-center min-h-[80px] group ${btnClass}`}
+                    >
+                      {/* Animated Peer Stats Overlay */}
+                      {showStats && (
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${opt.peerStat}%` }}
+                          transition={{ duration: 1.5, ease: "circOut" }}
+                          className={`absolute left-0 top-0 bottom-0 ${statBarColor}`} 
+                        />
+                      )}
 
-          {showExplanation && (
-            <div className={`animate-in slide-in-from-bottom-4 fade-in duration-500 p-6 lg:p-8 border rounded-3xl ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
-              <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px] mb-4">
-                <AlertCircle size={16} /> Official Solution
-              </h4>
-              <p className={`leading-relaxed font-medium text-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                {currentQ.explanation}
-              </p>
-            </div>
-          )}
+                      <span className={`relative z-10 w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0 mr-4 transition-colors ${letterBg}`}>
+                        {['A', 'B', 'C', 'D'][idx]}
+                      </span>
+                      
+                      <span className={`relative z-10 font-bold text-left flex-1 ${fontSizes.options}`}>
+                        {opt.text}
+                      </span>
 
+                      {showStats && (
+                        <span className={`relative z-10 text-xs font-black ml-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                          {opt.peerStat}%
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {showExplanation && (
+                <div className={`animate-in slide-in-from-bottom-4 fade-in duration-500 p-6 lg:p-8 border rounded-3xl ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
+                  <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px] mb-4">
+                    <AlertCircle size={16} /> Official Solution
+                  </h4>
+                  <p className={`leading-relaxed font-medium text-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    {currentQ.explanation}
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 

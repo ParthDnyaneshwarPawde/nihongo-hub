@@ -5,6 +5,7 @@ import {
   Plus, GripVertical, ChevronDown, X, Save, 
   Trash2, CheckCircle2, Circle, Type, Link as LinkIcon, Loader2, Lock, Unlock, Clock, AlignLeft
 } from 'lucide-react';
+import { useStickyState } from '@hooks/useStickyState';
 
 // 🚨 FIREBASE IMPORTS UPDATED
 import { db } from '@services/firebase'; 
@@ -30,6 +31,9 @@ export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
   const [editorDuration, setEditorDuration] = useState('');
   const [editorContent, setEditorContent] = useState('');
   const [editorIsLocked, setEditorIsLocked] = useState(true); 
+  // -- UI Memory State --
+  const [expandedModules, setExpandedModules] = useStickyState([], `expanded-mods-${batchId}`);
+  const [expandedChapters, setExpandedChapters] = useStickyState([], `expanded-chaps-${batchId}`);
   
   const [quizPrompt, setQuizPrompt] = useState('');
   const [quizOptions, setQuizOptions] = useState([
@@ -245,8 +249,19 @@ export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
   // ----------------------------------------------------
   // UI HANDLERS
   // ----------------------------------------------------
-  const toggleModule = (modId) => setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, isExpanded: !m.isExpanded } : m));
-  const toggleChapter = (modId, chapId) => setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, chapters: m.chapters.map(c => c.id === chapId ? { ...c, isExpanded: !c.isExpanded } : c) } : m));
+  // const toggleModule = (modId) => setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, isExpanded: !m.isExpanded } : m));
+  // const toggleChapter = (modId, chapId) => setCurriculum(prev => prev.map(m => m.id === modId ? { ...m, chapters: m.chapters.map(c => c.id === chapId ? { ...c, isExpanded: !c.isExpanded } : c) } : m));
+  const toggleModule = (modId) => {
+    setExpandedModules(prev => 
+      prev.includes(modId) ? prev.filter(id => id !== modId) : [...prev, modId]
+    );
+  };
+
+  const toggleChapter = (modId, chapId) => {
+    setExpandedChapters(prev => 
+      prev.includes(chapId) ? prev.filter(id => id !== chapId) : [...prev, chapId]
+    );
+  };
 
   // 🚨 UPGRADED: OPEN EDITOR (handles existing item data)
   const openEditor = (type, modId, chapId, existingItem = null) => {
@@ -300,11 +315,11 @@ export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
                 {mod.isLocked ? <Lock size={18} /> : <Unlock size={18} />}
               </button>
               <button onClick={() => handleAddChapter(mod.id)} className={`px-4 py-2 text-xs font-bold rounded-lg border transition-colors ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}>+ Add Chapter</button>
-              <button onClick={() => toggleModule(mod.id)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}><ChevronDown size={20} className={`transition-transform duration-300 ${mod.isExpanded ? 'rotate-180' : ''}`} /></button>
+              <button onClick={() => toggleModule(mod.id)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}><ChevronDown size={20} className={`transition-transform duration-300 ${expandedModules.includes(mod.id) ? 'rotate-180' : ''}`} /></button>
             </div>
           </div>
 
-          {mod.isExpanded && (
+          {expandedModules.includes(mod.id) && (
             <div className={`p-4 lg:p-6 space-y-4 border-t ${isDarkMode ? 'border-slate-800 bg-[#0B1121]/30' : 'border-slate-200 bg-white'}`}>
               {mod.chapters.map((chap) => (
                 <div key={chap.id} className={`rounded-2xl border ${isDarkMode ? 'border-slate-700/60 bg-[#151E2E]/80' : 'border-slate-200 bg-slate-50'}`}>
@@ -319,11 +334,11 @@ export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
                       <button onClick={() => toggleChapterLock(mod.id, chap.id, chap.isLocked)} title={chap.isLocked ? "Unlock Chapter" : "Lock Chapter"} className={`p-1.5 rounded-lg transition-colors ${chap.isLocked ? 'text-rose-500 hover:bg-rose-500/10' : 'text-emerald-500 hover:bg-emerald-500/10'}`}>
                         {chap.isLocked ? <Lock size={16} /> : <Unlock size={16} />}
                       </button>
-                      <button onClick={() => toggleChapter(mod.id, chap.id)} className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}><ChevronDown size={18} className={`transition-transform duration-300 ${chap.isExpanded ? 'rotate-180' : ''}`} /></button>
+                      <button onClick={() => toggleChapter(mod.id, chap.id)} className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}><ChevronDown size={18} className={`transition-transform duration-300 ${expandedChapters.includes(chap.id) ? 'rotate-180' : ''}`} /></button>
                     </div>
                   </div>
 
-                  {chap.isExpanded && (
+                  {expandedChapters.includes(chap.id) && (
                     <div className={`p-3 border-t ${isDarkMode ? 'border-slate-700/60' : 'border-slate-200'}`}>
                       <div className="space-y-2 mb-4">
                         {chap.items.length === 0 && <div className={`text-center py-4 text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>No content yet</div>}

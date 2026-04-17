@@ -3,35 +3,38 @@ import {
   ArrowLeft, Save, Plus, Trash2, CheckCircle2, Circle, 
   AlignLeft, Type, Loader2, Sparkles, Clock, Award, ShieldAlert, Percent,
   TrendingDown, Headphones, Tag, Lightbulb, Video, BarChart, Layers, X, PenTool, Mic,
-  ChevronDown, ChevronUp, Download, Hash // 🚨 Added Hash icon
+  ChevronDown, ChevronUp, Download, Hash, Eye, EyeOff
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getDoc } from 'firebase/firestore';
 
-// 🚨 FIREBASE IMPORTS (Reverted to standard batch writes)
+// 🚨 FIREBASE IMPORTS
 import { db } from '@services/firebase'; 
-import { collection, serverTimestamp, doc, increment, writeBatch } from 'firebase/firestore';
+import { collection, serverTimestamp, doc, increment, writeBatch, getDoc } from 'firebase/firestore';
+import { useTheme } from '@/context/ThemeContext'; 
 
-export default function QuestionForge({ isDarkMode = true }) {
+export default function QuestionForge() {
   const navigate = useNavigate();
+  const { isDarkMode } = useTheme();
   const { batchId, modId, chapId, exerciseId } = useParams();
 
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false); 
   const [importId, setImportId] = useState(''); 
+  const [isLoading, setIsLoading] = useState(false);
   
   // -- Global Quiz Meta State --
   const [quizTitle, setQuizTitle] = useState('');
   const [quizDescription, setQuizDescription] = useState('');
   const [allowPause, setAllowPause] = useState(false); 
   const [passPercentage, setPassPercentage] = useState(80); 
+  const [isLocked, setIsLocked] = useState(true); // Default to locked/hidden
 
   // -- ULTIMATE QUESTION SCHEMA STATE --
   const [questions, setQuestions] = useState([
     { 
       id: Date.now(), 
-      customId: '', // 🚨 NEW: Holds the teacher's manual serial number
+      customId: '', 
       isExpanded: true, 
       type: 'single_choice',
       subType: 'reading', 
@@ -43,8 +46,8 @@ export default function QuestionForge({ isDarkMode = true }) {
       points: 4,     
       negativePoints: 1,
       options: [
-        { id: 1, text: '', isCorrect: true }, 
-        { id: 2, text: '', isCorrect: false }
+        { id: 1, text: '', isCorrect: true, count: 0 }, 
+        { id: 2, text: '', isCorrect: false, count: 0 }
       ],
       solutionText: '',
       solutionVideoUrl: '',
@@ -52,12 +55,31 @@ export default function QuestionForge({ isDarkMode = true }) {
     }
   ]);
 
+  const [batchName, setBatchName] = useState("");
+
+  // Fetch the name when the Forge opens
+  useEffect(() => {
+    const fetchBatchName = async () => {
+      if (!batchId) return;
+      try {
+        const batchSnap = await getDoc(doc(db, 'batches', batchId));
+        if (batchSnap.exists()) {
+          setBatchName(batchSnap.data().title || batchSnap.data().name); 
+        }
+      } catch (error) {
+        console.error("Error fetching batch name:", error);
+      }
+    };
+    fetchBatchName();
+  }, [batchId]);
+
   // ----------------------------------------------------
-  // 📥 FETCH EXISTING QUIZ
+  // 📥 FETCH EXISTING QUIZ & BRIDGE TO QUESTION BANK
   // ----------------------------------------------------
   useEffect(() => {
     const fetchExistingQuiz = async () => {
       if (!exerciseId) return; 
+      setIsLoading(true);
 
       try {
         const quizRef = doc(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`, exerciseId);
@@ -70,41 +92,62 @@ export default function QuestionForge({ isDarkMode = true }) {
           setQuizDescription(data.description || '');
           setAllowPause(data.allowPause || false);
           setPassPercentage(data.passPercentage || 80);
+          setIsLocked(data.isLocked !== undefined ? data.isLocked : true);
 
-          if (data.questions && data.questions.length > 0) {
-            const loadedQuestions = data.questions.map(q => {
-              // 🚨 Try to extract the number if the ID is formatted like "q_0005"
-              let extractedCustomId = '';
-              if (typeof q.id === 'string' && q.id.startsWith('q_')) {
-                // Removes 'q_' and leading zeros (e.g., 'q_0005' -> '5')
-                extractedCustomId = q.id.replace('q_', '').replace(/^0+/, '') || '0'; 
-              }
+          // 🚨 FETCH FROM THE BANK USING THE LIGHTWEIGHT IDs
+          const qIds = data.questionIds || [];
+          
+          if (qIds.length > 0) {
+            const questionPromises = qIds.map(id => getDoc(doc(db, `question_bank/${batchId}/questions`, id)));
+            const questionSnaps = await Promise.all(questionPromises);
 
-              return {
-                id: q.id,
-                customId: extractedCustomId, // Fill the input box
-                isExpanded: false, 
-                type: q.type || 'single_choice',
-                subType: q.subType || 'reading',
-                difficulty: q.difficulty || 'mid',
-                tags: q.tags ? q.tags.join(', ') : '',
-                prompt: q.promptText || '',
-                mediaUrl: q.mediaUrl || '',
-                timeLimit: q.idealTimeSeconds || 45,
-                points: q.points || 4,
-                negativePoints: q.negativePoints || 1,
-                options: q.options || [],
-                solutionText: q.officialSolution?.text || '',
-                solutionVideoUrl: q.officialSolution?.videoUrl || '',
-                isDeleted: false
-              };
-            });
+            const loadedQuestions = questionSnaps
+              .filter(snap => snap.exists())
+              .map(snap => {
+                const qData = snap.data();
+                
+                let extractedCustomId = '';
+                if (typeof qData.id === 'string' && qData.id.startsWith('q_')) {
+                  extractedCustomId = qData.id.replace('q_', '').replace(/^0+/, '') || '0'; 
+                }
+
+                // Make sure we always have at least one option for text/kanji
+                const safeOptions = qData.options && qData.options.length > 0 
+                  ? qData.options 
+                  : [{ id: Date.now(), text: qData.expectedAnswer || '', isCorrect: true, count: 0 }];
+
+                return {
+                  id: qData.id,
+                  customId: extractedCustomId, 
+                  isExpanded: false, 
+                  type: qData.type || 'single_choice',
+                  subType: qData.subType || 'reading',
+                  difficulty: qData.difficulty || 'mid',
+                  tags: qData.tags ? qData.tags.join(', ') : '',
+                  prompt: qData.promptText || '',
+                  mediaUrl: qData.mediaUrl || '',
+                  timeLimit: qData.idealTimeSeconds || 45,
+                  points: qData.points || 4,
+                  negativePoints: qData.negativePoints || 1,
+                  options: safeOptions,
+                  solutionText: qData.officialSolution?.text || '',
+                  solutionVideoUrl: qData.officialSolution?.videoUrl || '',
+                  isDeleted: false
+                };
+              });
             
             setQuestions(loadedQuestions);
+          } else {
+             // Fallback for older versions of your database before the migration
+             if(data.questions && data.questions.length > 0) {
+                setQuestions(data.questions); 
+             }
           }
         }
       } catch (error) {
         console.error("Failed to load existing quiz:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -130,6 +173,10 @@ export default function QuestionForge({ isDarkMode = true }) {
           extractedCustomId = data.id.replace('q_', '').replace(/^0+/, '') || '0'; 
         }
 
+        const safeOptions = data.options && data.options.length > 0 
+          ? data.options 
+          : [{ id: Date.now(), text: data.expectedAnswer || '', isCorrect: true, count: 0 }];
+
         setQuestions([
           ...questions,
           {
@@ -145,7 +192,7 @@ export default function QuestionForge({ isDarkMode = true }) {
             timeLimit: data.idealTimeSeconds || 45,
             points: data.points || 4,
             negativePoints: data.negativePoints || 1,
-            options: data.options || [],
+            options: safeOptions,
             solutionText: data.officialSolution?.text || '',
             solutionVideoUrl: data.officialSolution?.videoUrl || '',
             isDeleted: false
@@ -172,7 +219,7 @@ export default function QuestionForge({ isDarkMode = true }) {
       ...questions, 
       { 
         id: Date.now(), 
-        customId: '', // 🚨 Blank for the teacher to fill
+        customId: '', 
         isExpanded: true,
         type: 'single_choice',
         subType: 'reading',
@@ -183,7 +230,7 @@ export default function QuestionForge({ isDarkMode = true }) {
         timeLimit: 45, 
         points: 4,
         negativePoints: 1,
-        options: [{ id: 1, text: '', isCorrect: true }, { id: 2, text: '', isCorrect: false }],
+        options: [{ id: 1, text: '', isCorrect: true, count: 0 }, { id: 2, text: '', isCorrect: false, count: 0 }],
         solutionText: '',
         solutionVideoUrl: '',
         isDeleted: false
@@ -202,12 +249,25 @@ export default function QuestionForge({ isDarkMode = true }) {
   };
 
   const updateQuestionField = (qId, field, value) => {
-    setQuestions(questions.map(q => q.id === qId ? { ...q, [field]: value } : q));
+    setQuestions(questions.map(q => {
+      if (q.id === qId) {
+        // 🚨 Safety Check: If switching to Kanji/Text, reset options to just 1 correct answer
+        if (field === 'type' && (value === 'kanji_draw' || value === 'text_input')) {
+          return { 
+            ...q, 
+            [field]: value, 
+            options: [{ id: Date.now(), text: q.options[0]?.text || '', isCorrect: true, count: 0 }] 
+          };
+        }
+        return { ...q, [field]: value };
+      }
+      return q;
+    }));
   };
 
   const handleAddOption = (qId) => {
     setQuestions(questions.map(q => {
-      if (q.id === qId) return { ...q, options: [...q.options, { id: Date.now(), text: '', isCorrect: false }] };
+      if (q.id === qId) return { ...q, options: [...q.options, { id: Date.now(), text: '', isCorrect: false, count: 0 }] };
       return q;
     }));
   };
@@ -252,15 +312,11 @@ export default function QuestionForge({ isDarkMode = true }) {
   };
 
   // ----------------------------------------------------
-  // 🚨 LOGIC: FIREBASE SAVE (With Custom ID Formatter)
-  // ----------------------------------------------------
-// ----------------------------------------------------
-  // 🚨 LOGIC: FIREBASE SAVE (With Custom ID Formatter & Timestamp Fix)
+  // 🚨 LOGIC: FIREBASE SAVE (Immutable Question Bank)
   // ----------------------------------------------------
   const handleSaveQuiz = async () => {
     if (!quizTitle.trim()) return alert("Please provide a title for this assessment.");
     
-    // 🚨 1. THIS IS THE MISSING LINE! Define activeQs first.
     const activeQs = questions.filter(q => !q.isDeleted);
     
     const hasEmptyPrompts = activeQs.some(q => !q.prompt.trim());
@@ -274,20 +330,20 @@ export default function QuestionForge({ isDarkMode = true }) {
       const qBankBatchRef = doc(db, 'question_bank', batchId);
       batch.set(qBankBatchRef, {
         batchId: batchId,
+        batchName: batchName,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      const formattedQuestions = [];
       const totalSeconds = activeQs.reduce((acc, curr) => acc + Number(curr.timeLimit), 0);
       const calculatedDuration = totalSeconds === 0 ? "Untimed" : `${Math.ceil(totalSeconds / 60)} mins`;
-
-      // 🚨 2. Create a static timestamp to avoid the Firebase Array Trap
       const timestampNow = new Date();
+      
+      const lightweightQuestionIds = [];
+      let totalPointsSum = 0;
 
-      questions.forEach((q) => {
+      activeQs.forEach((q) => {
         let finalQId = q.id;
 
-        // Format the custom ID
         if (q.customId && q.customId.toString().trim() !== '') {
            finalQId = `q_${String(q.customId).padStart(4, '0')}`;
         } else if (typeof q.id === 'number') {
@@ -297,8 +353,10 @@ export default function QuestionForge({ isDarkMode = true }) {
         const qRef = doc(db, `question_bank/${batchId}/questions`, finalQId);
         
         let cleanOptions = q.options;
-        if (q.type === 'text_input') cleanOptions = q.options.map(o => ({ ...o, isCorrect: true }));
-        else if (q.type === 'kanji_draw' || q.type === 'pronunciation') cleanOptions = []; 
+        if (q.type === 'text_input') cleanOptions = q.options.map(o => ({ ...o, isCorrect: true, count: o.count || 0 }));
+        else if (q.type === 'kanji_draw' || q.type === 'pronunciation') {
+            cleanOptions = [{ id: q.options[0]?.id || Date.now(), text: q.options[0]?.text || '', isCorrect: true, count: q.options[0]?.count || 0 }];
+        } 
 
         const qData = {
           id: finalQId,
@@ -318,21 +376,14 @@ export default function QuestionForge({ isDarkMode = true }) {
             videoUrl: q.solutionVideoUrl || null
           },
           communitySolutions: [],
-          
-          // 🚨 3. Use the static JS Date here
           createdAt: q.createdAt ? new Date(q.createdAt) : timestampNow,
           updatedAt: timestampNow,
-          isDeleted: q.isDeleted || false,
-          deletedAt: q.deletedAt ? new Date(q.deletedAt) : null
         };
 
-        // Save everything to the bank
         batch.set(qRef, qData, { merge: true });
         
-        // Only push non-deleted questions to the active student exercise
-        if (!q.isDeleted) {
-          formattedQuestions.push(qData);
-        }
+        totalPointsSum += Number(q.points);
+        lightweightQuestionIds.push(finalQId);
       });
 
       const exerciseRef = exerciseId 
@@ -343,14 +394,13 @@ export default function QuestionForge({ isDarkMode = true }) {
         title: quizTitle,
         description: quizDescription,
         type: 'quiz',
-        isLocked: true, 
-        createdAt: serverTimestamp(), // This one is perfectly fine here at the root level!
+        isLocked: isLocked, 
+        createdAt: serverTimestamp(), 
         allowPause: allowPause,
         passPercentage: Number(passPercentage),
-        totalPoints: formattedQuestions.reduce((acc, curr) => acc + curr.points, 0),
+        totalPoints: totalPointsSum,
         duration: calculatedDuration,
-        questions: formattedQuestions,
-        questionIds: formattedQuestions.map(q => q.id),
+        questionIds: lightweightQuestionIds, // 🚨 The Ultra-Lightweight link!
         isCompleted: false
       };
 
@@ -374,6 +424,15 @@ export default function QuestionForge({ isDarkMode = true }) {
   // ----------------------------------------------------
   // RENDER
   // ----------------------------------------------------
+  if (isLoading) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'bg-[#0B1121] text-indigo-500' : 'bg-slate-50 text-indigo-600'}`}>
+        <Loader2 size={40} className="animate-spin mb-4" />
+        Pulling Master Records...
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-900'} pb-32 transition-colors duration-500`}>
       
@@ -417,7 +476,7 @@ export default function QuestionForge({ isDarkMode = true }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800">
             <div className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-500/20 text-emerald-500 rounded-xl"><Percent size={18}/></div>
@@ -441,6 +500,24 @@ export default function QuestionForge({ isDarkMode = true }) {
               </div>
               <button onClick={() => setAllowPause(!allowPause)} className={`relative w-12 h-6 rounded-full transition-colors ${allowPause ? 'bg-amber-500' : 'bg-rose-500'}`}>
                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${allowPause ? 'translate-x-7' : 'left-1'}`}></div>
+              </button>
+            </div>
+
+            {/* 🚨 Content Visibility Toggle */}
+            <div className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-xl ${isLocked ? 'bg-slate-500/20 text-slate-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                  {isLocked ? <EyeOff size={18}/> : <Eye size={18}/>}
+                </div>
+                <div>
+                  <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Visibility</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    {isLocked ? 'Hidden / Locked' : 'Published'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsLocked(!isLocked)} className={`relative w-12 h-6 rounded-full transition-colors ${isLocked ? 'bg-slate-600' : 'bg-emerald-500'}`}>
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${isLocked ? 'left-1' : 'translate-x-7'}`}></div>
               </button>
             </div>
           </div>
@@ -513,7 +590,7 @@ export default function QuestionForge({ isDarkMode = true }) {
                         {/* 1. CORE & META SETTINGS */}
                         <div className={`grid grid-cols-2 md:grid-cols-6 gap-4 p-4 rounded-2xl mb-6 ${isDarkMode ? 'bg-[#0B1121] border border-slate-800' : 'bg-slate-50 border border-slate-200'}`}>
                           
-                          {/* 🚨 NEW: Custom Serial No */}
+                          {/* Custom Serial No */}
                           <div>
                             <label className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1 flex items-center gap-1"><Hash size={12}/> Question No.</label>
                             <input type="number" placeholder="e.g. 1" value={q.customId} onChange={(e) => updateQuestionField(q.id, 'customId', e.target.value)} className={`w-full bg-transparent font-bold text-sm outline-none ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}/>
@@ -583,7 +660,7 @@ export default function QuestionForge({ isDarkMode = true }) {
                           </div>
 
                           {/* 3. DYNAMIC OPTIONS UI */}
-                          {(q.type === 'single_choice' || q.type === 'multiple_choice') && (
+                          {(q.type === 'single_choice' || q.type === 'multiple_choice') ? (
                             <div>
                               <label className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}><CheckCircle2 size={14}/> Answer Options ({q.type === 'single_choice' ? 'Pick One' : 'Pick Multiple'})</label>
                               <div className="space-y-3 pl-4 border-l-2 border-slate-200 dark:border-slate-800">
@@ -602,35 +679,47 @@ export default function QuestionForge({ isDarkMode = true }) {
                                 <button onClick={() => handleAddOption(q.id)} className={`w-full py-3 rounded-xl border border-dashed font-bold text-sm mt-2 transition-colors ${isDarkMode ? 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}>+ Add Choice</button>
                               </div>
                             </div>
-                          )}
-
-                          {q.type === 'text_input' && (
-                            <div>
-                              <label className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}><AlignLeft size={14}/> Accepted Answers (Exact Match)</label>
-                              <div className="space-y-3 pl-4 border-l-2 border-slate-200 dark:border-slate-800">
-                                <AnimatePresence>
-                                  {q.options.map((opt, optIndex) => (
-                                    <motion.div key={opt.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className={`flex items-center p-3 rounded-2xl border-2 transition-all ${isDarkMode ? 'border-indigo-500/50 bg-[#0B1121]' : 'border-indigo-200 bg-white'}`}>
-                                      <input type="text" value={opt.text} onChange={(e) => updateOptionText(q.id, opt.id, e.target.value)} placeholder={`e.g., Mizu, mizu, 水`} className={`flex-1 bg-transparent border-none outline-none font-bold text-base px-4 ${isDarkMode ? 'text-white' : 'text-slate-900'}`} />
-                                      <button onClick={() => handleRemoveOption(q.id, opt.id)} className={`p-2 text-slate-500 hover:text-rose-500 transition-colors`}><X size={16} /></button>
-                                    </motion.div>
-                                  ))}
-                                </AnimatePresence>
-                                <button onClick={() => handleAddOption(q.id)} className={`w-full py-3 rounded-xl border border-dashed font-bold text-sm mt-2 transition-colors ${isDarkMode ? 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}>+ Add Acceptable Answer</button>
-                              </div>
-                            </div>
-                          )}
-
-                          {q.type === 'kanji_draw' && (
-                            <div className={`p-6 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200'}`}>
-                              <PenTool size={24} className="text-indigo-500 shrink-0 mt-1" />
-                              <div>
-                                <h4 className={`font-bold text-base mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Kanji Drawing Task</h4>
-                                <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                                  Students will draw the Kanji on a canvas. This is graded automatically by the AI Engine. 
-                                  Correct stroke order and shape award full points. Incorrect awards 0 points. <br/>
-                                  <span className="font-bold text-indigo-400 mt-2 block">Tip: Make sure the prompt above clearly specifies the Kanji they need to draw!</span>
-                                </p>
+                          ) : (
+                            // 🚨 TEXT INPUT OR KANJI DRAWING (Properly renders the input box)
+                            <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
+                              {/* Dedicated Kanji Instructions */}
+                              {q.type === 'kanji_draw' && (
+                                <div className={`p-6 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200'}`}>
+                                  <PenTool size={24} className="text-indigo-500 shrink-0 mt-1" />
+                                  <div>
+                                    <h4 className={`font-bold text-base mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Kanji AI Evaluation Task</h4>
+                                    <p className={`text-sm leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                                      Students will draw the Kanji on a canvas. The AI Engine automatically grades their stroke order against your expected character.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="space-y-3 pl-4 border-l-2 border-indigo-200 dark:border-indigo-500/30">
+                                <label className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                                  <CheckCircle2 size={14}/> {q.type === 'kanji_draw' ? 'Expected Kanji Character' : 'Exact Expected Answer'}
+                                </label>
+                                
+                                <div className={`flex items-center p-3 rounded-2xl border-2 transition-all ${isDarkMode ? 'border-indigo-500/50 bg-[#0B1121]' : 'border-indigo-200 bg-white'}`}>
+                                  <input 
+                                    type="text" 
+                                    placeholder={q.type === 'kanji_draw' ? "e.g., 水" : "Exact string to match..."}
+                                    value={q.options && q.options.length > 0 ? q.options[0].text : ''} 
+                                    onChange={(e) => {
+                                      // Safely update the options array for this specific question
+                                      setQuestions(questions.map(question => {
+                                        if (question.id === q.id) {
+                                          const newOptions = question.options && question.options.length > 0
+                                            ? [{ ...question.options[0], text: e.target.value }]
+                                            : [{ id: Date.now(), text: e.target.value, isCorrect: true, count: 0 }];
+                                          return { ...question, options: newOptions };
+                                        }
+                                        return question;
+                                      }));
+                                    }} 
+                                    className={`flex-1 bg-transparent border-none outline-none font-black text-2xl px-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} 
+                                  />
+                                </div>
                               </div>
                             </div>
                           )}

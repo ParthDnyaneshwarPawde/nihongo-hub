@@ -454,10 +454,41 @@ export default function LectureViewer() {
   );
 
   const renderMainContent = () => {
-    if (!activeItem) return <div className="flex-1"></div>;
+    if (!activeItem || chapters.length === 0) {
+      return (
+        <main className={`flex-1 flex flex-col items-center justify-center p-6 text-center transition-all duration-300 ${isDark ? 'bg-[#0B1121]' : 'bg-[#FAFAFA]'}`}>
+          <div className="relative mb-8">
+            {/* Soft Glow Effect */}
+            <div className={`absolute inset-0 blur-3xl rounded-full ${isDark ? 'bg-indigo-500/10' : 'bg-indigo-500/5'}`}></div>
+            
+            {/* Glassmorphic Icon Container */}
+            <div className={`relative p-8 rounded-[2.5rem] border backdrop-blur-xl transition-all ${isDark ? 'bg-slate-900/50 border-slate-800 shadow-2xl' : 'bg-white border-slate-200 shadow-xl shadow-slate-200/50'}`}>
+              <PlaySquare size={64} className="text-indigo-500 animate-pulse" />
+            </div>
+          </div>
+
+          <h2 className={`text-3xl font-black mb-3 tracking-tight ${isDark ? 'text-white' : 'text-slate-800'}`}>
+            Curriculum Empty
+          </h2>
+          <p className={`max-w-md text-lg mb-10 leading-relaxed font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            This course doesn't have any lessons uploaded yet. Check back soon for updates!
+          </p>
+
+          <button 
+            onClick={() => navigate('/student-dashboard')}
+            className="group flex items-center gap-3 px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all duration-300 shadow-xl shadow-indigo-600/25 active:scale-95"
+          >
+            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+            Back to Dashboard
+          </button>
+        </main>
+      );
+    }
+
     const isComplete = completedItemIds.includes(activeItem.id);
 
     return (
+      
       <main className={`flex-1 flex flex-col min-w-0 h-full overflow-hidden transition-all duration-300 ${isDark ? 'bg-[#0B1121]' : 'bg-[#FAFAFA]'}`}>
         <header className={`h-16 px-4 lg:px-6 shrink-0 flex items-center justify-between border-b z-10 transition-colors ${isDark ? 'bg-[#151E2E] border-slate-800' : 'bg-white/80 backdrop-blur-md border-slate-200/60 shadow-sm'}`}>
           <div className="flex items-center gap-3">
