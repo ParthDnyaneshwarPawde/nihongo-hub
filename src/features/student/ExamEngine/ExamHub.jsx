@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useStickyState } from '@hooks/useStickyState';
 import { 
   Search, Filter, Lock, PlayCircle, Clock, Trophy, Layers, Target, 
@@ -55,7 +56,8 @@ const QUESTION_BANK_TREE = [
 // ==========================================
 // 🌿 RECURSIVE TREE COMPONENT (UPGRADED UI)
 // ==========================================
-const TreeNode = ({ node, level = 0, selectedTopics, toggleTopic, isDarkMode }) => {
+const TreeNode = ({ node, level = 0, selectedTopics, toggleTopic }) => {
+  const { isDarkMode } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const isLeaf = node.type === "leaf";
   const isSelected = selectedTopics.includes(node.id);
@@ -121,7 +123,7 @@ const TreeNode = ({ node, level = 0, selectedTopics, toggleTopic, isDarkMode }) 
       <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isOpen ? 'max-h-[1000px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
         <div className={`relative pl-4 ml-6 space-y-1 py-2 border-l-2 ${isDarkMode ? 'border-slate-700/50' : 'border-slate-200'}`}>
           {node.children.map(child => (
-            <TreeNode key={child.id} node={child} level={level + 1} selectedTopics={selectedTopics} toggleTopic={toggleTopic} isDarkMode={isDarkMode} />
+            <TreeNode key={child.id} node={child} level={level + 1} selectedTopics={selectedTopics} toggleTopic={toggleTopic} />
           ))}
         </div>
       </div>
@@ -132,7 +134,8 @@ const TreeNode = ({ node, level = 0, selectedTopics, toggleTopic, isDarkMode }) 
 // ==========================================
 // 🚀 MAIN EXAM HUB COMPONENT
 // ==========================================
-export default function ExamHub({ isDarkMode = true, setSidebarOpen }) {
+export default function ExamHub({ setSidebarOpen }) {
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   
   useEffect(() => {
@@ -382,7 +385,7 @@ export default function ExamHub({ isDarkMode = true, setSidebarOpen }) {
                   {/* Tree Container */}
                   <div className={`p-2 rounded-3xl border shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
                     {QUESTION_BANK_TREE.map(node => (
-                      <TreeNode key={node.id} node={node} selectedTopics={customForm.topics} toggleTopic={toggleTopic} isDarkMode={isDarkMode} />
+                      <TreeNode key={node.id} node={node} selectedTopics={customForm.topics} toggleTopic={toggleTopic} />
                     ))}
                   </div>
                 </div>

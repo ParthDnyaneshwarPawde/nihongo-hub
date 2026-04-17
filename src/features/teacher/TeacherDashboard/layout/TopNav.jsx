@@ -1,8 +1,10 @@
 import React from 'react';
 import { Menu, Search, Bell } from 'lucide-react';
 import ZenToggle from '../components/ZenToggle';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function TopNav({ isDarkMode, toggleDarkMode, toggleSidebar }) {
+export default function TopNav({ toggleSidebar }) {
+  const { isDarkMode, toggleTheme } = useTheme();
   return (
     <header className={`h-20 border-b backdrop-blur-md px-6 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0A0F1C]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
       <div className="flex items-center gap-4">
@@ -18,7 +20,7 @@ export default function TopNav({ isDarkMode, toggleDarkMode, toggleSidebar }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <ZenToggle isDarkMode={isDarkMode} onToggle={toggleDarkMode} />
+        <ZenToggle isDarkMode={isDarkMode} onToggle={toggleTheme} />
         <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
         <button className={`p-2.5 rounded-xl border relative transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'}`}>
           <Bell size={18} />

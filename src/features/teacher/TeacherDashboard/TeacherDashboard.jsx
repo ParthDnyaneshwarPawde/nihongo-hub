@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { AnimatePresence } from 'framer-motion';
 
 import Sidebar from './layout/Sidebar';
@@ -17,7 +18,8 @@ import TeacherBatches from './TeacherBatches/TeacherBatches';
 
 export default function TeacherDashboard() {
 
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const { isDarkMode, toggleTheme } = useTheme();
+
   // 1. Data Hook (Acts as the single source of truth)
   const dashboardState = useDashboardHomeEffects();
 
@@ -36,26 +38,15 @@ export default function TeacherDashboard() {
      
   } = useDashboardNavigation('dashboard');
 
-  const toggleDarkMode = () => setIsDarkMode(prev => !prev);
-
-  useEffect(() => {
-    console.log("Dark mode state changed to:", isDarkMode); // <--- Add this!
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
-
   // Router Map for dynamic tab loading
   const renderactiveTab = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardHome key="dashboard" isDarkMode={isDarkMode} {...dashboardState} />;
+        return <DashboardHome key="dashboard" {...dashboardState} />;
       case 'live':
-        return <LiveClassrooms key="live" isDarkMode={isDarkMode} />;
+        return <LiveClassrooms key="live" />;
       case 'materials':
-        return <TeacherBatches key="materials" isDarkMode={isDarkMode} />;
+        return <TeacherBatches key="materials" />;
       case 'students':
       case 'exams':
         return (
@@ -65,19 +56,18 @@ export default function TeacherDashboard() {
           </div>
         );
       default:
-        return <DashboardHome key="dashboard"  isDarkMode={isDarkMode} {...dashboardState} />;
+        return <DashboardHome key="dashboard" {...dashboardState} />;
     }
   };
 
   return (
     <div className={`flex h-screen ${isDarkMode ? 'dark bg-[#0A0F1C] text-slate-200' : 'bg-[#F8FAFC] text-slate-900'} font-sans transition-colors duration-500 overflow-hidden relative`}>
       {/* Dynamic Backgrounds */}
-      <AntigravityCanvas isDarkMode={isDarkMode} />
-      <FloatingKanji isDarkMode={isDarkMode} activeTab={activeTab} />
+      <AntigravityCanvas />
+      <FloatingKanji activeTab={activeTab} />
 
       {/* Structural Sidebar */}
       <Sidebar 
-        isDarkMode={isDarkMode}
         isSidebarOpen={isSidebarOpen}
         closeSidebar={closeSidebar}
         activeTab={activeTab}
@@ -89,8 +79,6 @@ export default function TeacherDashboard() {
 
       {/* Main Orchestrator Shell */}
       <DashboardShell 
-        isDarkMode={isDarkMode} 
-        toggleDarkMode={toggleDarkMode}
         toggleSidebar={toggleSidebar}
       >
         <AnimatePresence mode="wait">

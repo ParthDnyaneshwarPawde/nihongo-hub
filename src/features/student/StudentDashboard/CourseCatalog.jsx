@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft, CheckCircle2, Lock, Zap, Shield, X,
@@ -17,7 +18,7 @@ export default function CourseCatalog() {
   // --- 1. Global & Data States ---
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const { isDarkMode, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [userEnrollments, setUserEnrollments] = useState([]);
 
@@ -305,7 +306,7 @@ const handleFinalEnrollment = async () => {
           <div className="font-black tracking-tight text-lg sm:text-xl flex items-center gap-2 italic">
             Nihongo Hub <span className="text-indigo-500">Pro</span>
           </div>
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2.5 rounded-xl transition-colors border ${theme.border} ${isDarkMode ? 'hover:bg-white/10 text-yellow-400 bg-white/5' : 'hover:bg-gray-50 text-indigo-600 bg-white'}`}>
+          <button onClick={toggleTheme} className={`p-2.5 rounded-xl transition-colors border ${theme.border} ${isDarkMode ? 'hover:bg-white/10 text-yellow-400 bg-white/5' : 'hover:bg-gray-50 text-indigo-600 bg-white'}`}>
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
         </div>

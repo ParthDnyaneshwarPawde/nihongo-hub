@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function FloatingKanji({ isDarkMode, activeTab }) {
+export default function FloatingKanji({ activeTab }) {
+  const { isDarkMode } = useTheme();
   // Determine which Kanji to show based on the active tab
   const getKanji = () => {
     switch (activeTab) {

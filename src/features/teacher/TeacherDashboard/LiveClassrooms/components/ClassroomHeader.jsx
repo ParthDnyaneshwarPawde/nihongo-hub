@@ -1,8 +1,10 @@
 import React from 'react';
 import { Radio } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function ClassroomHeader({ liveSessionsCount, isDarkMode }) {
+export default function ClassroomHeader({ liveSessionsCount }) {
+  const { isDarkMode } = useTheme();
   return (
     <motion.div 
       className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-6"

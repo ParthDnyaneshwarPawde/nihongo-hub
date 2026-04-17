@@ -1,6 +1,7 @@
 // src/features/teacher/TeacherDashboard/components/TeacherSidebar.jsx
 import React from 'react';
 import { Tv, Users, BookOpen, Calendar, Settings, LogOut, BarChart3, X } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
 
 function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode }) {
   const activeClass = "bg-rose-600 text-white shadow-xl shadow-rose-600/30";
@@ -18,7 +19,8 @@ function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode }
   );
 }
 
-export default function TeacherSidebar({ isSidebarOpen, setIsSidebarOpen, isDarkMode, activeTab, setActiveTab, currentUser, handleLogout }) {
+export default function TeacherSidebar({ isSidebarOpen, setIsSidebarOpen, activeTab, setActiveTab, currentUser, handleLogout }) {
+  const { isDarkMode } = useTheme();
   return (
     <aside className={`
       fixed inset-y-0 left-0 z-[70] w-72 flex flex-col border-r transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0

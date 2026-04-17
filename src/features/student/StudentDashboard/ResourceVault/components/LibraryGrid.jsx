@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import ResourceCard from './ResourceCard';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function LibraryGrid({ assets, isDarkMode, setViewingPdf }) {
+export default function LibraryGrid({ assets, setViewingPdf }) {
+  const { isDarkMode } = useTheme();
   if (assets.length === 0) {
     return (
       <div className="py-20 text-center">
@@ -30,7 +32,6 @@ export default function LibraryGrid({ assets, isDarkMode, setViewingPdf }) {
             >
               <ResourceCard 
                 asset={asset} 
-                isDarkMode={isDarkMode} 
                 setViewingPdf={setViewingPdf} 
               />
             </motion.div>

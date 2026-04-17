@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { 
   FolderOpen, Layers, PlaySquare, FileText, HelpCircle, 
@@ -11,7 +12,8 @@ import { useStickyState } from '@hooks/useStickyState';
 import { db } from '@services/firebase'; 
 import { collection, addDoc, serverTimestamp, doc, updateDoc, increment, getDocs, deleteDoc } from 'firebase/firestore';
 
-export default function PathBuilderEngine({ isDarkMode = true, batchId }) {
+export default function PathBuilderEngine({ batchId }) {
+  const { isDarkMode } = useTheme();
   // -- Curriculum State --
   const [curriculum, setCurriculum] = useState([]);
   const [isLoading, setIsLoading] = useState(false);

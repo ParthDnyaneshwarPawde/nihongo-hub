@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { 
   collection, query, onSnapshot, addDoc, updateDoc, 
   getDocs, deleteDoc, doc, where, getDoc,
@@ -33,7 +34,8 @@ import StepBubble from '@components/shared/StepBubble';
 // Other screens
 import BatchCommandCenter from '@features/teacher/TeacherDashboard/TeacherBatches/BatchCommandCenter';
 
-export default function TeacherBatches({ isDarkMode = false }) {
+export default function TeacherBatches() {
+  const { isDarkMode } = useTheme();
   const { myBatches, otherBatches, pendingInvites, loading, myRealName, pendingSentInvites } = useTeacherBatches();
 
 const handleAcceptInvite = async (invite) => {
@@ -258,7 +260,7 @@ const handleSaveBatch = async (e) => {
       
       {/* 🔮 PREMIUM WEBGL KANJI ENVIRONMENT */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 blur-[120px] pointer-events-none rounded-full" />
-      <BackgroundCanvas isDarkMode={isDarkMode} />
+      <BackgroundCanvas />
 
       <div className="relative z-10 p-6 lg:p-10 space-y-12 max-w-[1500px] mx-auto">
 
@@ -460,7 +462,6 @@ const handleSaveBatch = async (e) => {
       {selectedBatch && (
         <BatchCommandCenter 
           batch={myBatches.find(b => b.id === selectedBatch.id) || selectedBatch} 
-          isDarkMode={isDarkMode} 
           onClose={() => setSelectedBatch(null)}
         />
       )}

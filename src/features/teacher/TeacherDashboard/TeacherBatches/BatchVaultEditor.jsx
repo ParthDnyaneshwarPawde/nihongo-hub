@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { 
   UploadCloud, FileText, Trash2, Check, Lock, PlayCircle, 
   Loader2, FileArchive, Layers, ExternalLink, Search, 
@@ -15,7 +16,8 @@ import { getAuth } from 'firebase/auth';
  * BATCH VAULT EDITOR - ARCHITECT MASTER V6.2 (ZIP UPDATE)
  * Features: ZIP Filtering, Side-Adaptive Tooltips, Dynamic Teacher Identity, Mode Adaptation
  */
-export default function BatchVaultEditor({ batchData, isDarkMode }) {
+export default function BatchVaultEditor({ batchData }) {
+  const { isDarkMode } = useTheme();
   // --- 1. DYNAMIC IDENTITY ENGINE ---
   const [activeUserName, setActiveUserName] = useState("Teacher Admin");
 
@@ -193,10 +195,10 @@ export default function BatchVaultEditor({ batchData, isDarkMode }) {
 
       {/* 📊 ELITE METRIC GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <EliteStat label="Payload Mass" val={totalSize} unit="MB" color="rose" icon={<HardDriveDownload size={20}/>} isDark={isDarkMode} />
-        <EliteStat label="Archives" val={assets.length} unit="Units" color="indigo" icon={<Layers size={20}/>} isDark={isDarkMode} />
-        <EliteStat label="Enrolled" val={batchData.enrolledCount || 0} unit="Users" color="emerald" icon={<Users size={20}/>} isDark={isDarkMode} />
-        <EliteStat label="Batch Level" val={batchData.level} color="amber" icon={<ShieldCheck size={20}/>} isDark={isDarkMode} />
+        <EliteStat label="Payload Mass" val={totalSize} unit="MB" color="rose" icon={<HardDriveDownload size={20}/>} />
+        <EliteStat label="Archives" val={assets.length} unit="Units" color="indigo" icon={<Layers size={20}/>} />
+        <EliteStat label="Enrolled" val={batchData.enrolledCount || 0} unit="Users" color="emerald" icon={<Users size={20}/>} />
+        <EliteStat label="Batch Level" val={batchData.level} color="amber" icon={<ShieldCheck size={20}/>} />
       </div>
 
       {/* 🛰️ UPLOAD TERMINAL */}
@@ -354,7 +356,8 @@ export default function BatchVaultEditor({ batchData, isDarkMode }) {
 /**
  * ELITE COMPACT METRIC CARD
  */
-function EliteStat({ label, val, unit, color, icon, isDark }) {
+function EliteStat({ label, val, unit, color, icon }) {
+  const { isDarkMode } = useTheme();
   const themes = {
     rose: 'text-rose-500 bg-rose-500/10 border-rose-500/20 shadow-rose-500/10',
     indigo: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20 shadow-indigo-500/10',
@@ -363,18 +366,18 @@ function EliteStat({ label, val, unit, color, icon, isDark }) {
   };
 
   return (
-    <div className={`relative group p-6 rounded-[2.5rem] border transition-all hover:-translate-y-1 shadow-2xl ${isDark ? 'bg-[#0B1120] border-slate-800 hover:border-slate-700 shadow-rose-900/10' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+    <div className={`relative group p-6 rounded-[2.5rem] border transition-all hover:-translate-y-1 shadow-2xl ${isDarkMode ? 'bg-[#0B1120] border-slate-800 hover:border-slate-700 shadow-rose-900/10' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
       <div className={`absolute -right-4 -top-4 w-20 h-20 blur-3xl opacity-10 rounded-full ${themes[color]}`}></div>
       <div className="flex items-start justify-between mb-5">
         <div className={`w-12 h-12 rounded-[1.2rem] flex items-center justify-center shadow-inner ${themes[color]}`}>{icon}</div>
-        <div className={`p-1.5 rounded-lg border opacity-0 group-hover:opacity-100 transition-all ${isDark ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
+        <div className={`p-1.5 rounded-lg border opacity-0 group-hover:opacity-100 transition-all ${isDarkMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
           <Zap size={10} className={themes[color].split(' ')[0]} />
         </div>
       </div>
       <div>
         <p className="text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] mb-1.5 leading-none">{label}</p>
         <div className="flex items-baseline gap-1.5">
-           <span className={`text-3xl font-black group-hover:scale-105 transition-transform origin-left block ${isDark ? 'text-white' : 'text-slate-900'}`}>{val}</span>
+           <span className={`text-3xl font-black group-hover:scale-105 transition-transform origin-left block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{val}</span>
            {unit && <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{unit}</span>}
         </div>
       </div>

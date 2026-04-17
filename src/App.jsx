@@ -23,7 +23,6 @@ import LectureViewer from '@features/student/StudentDashboard/CourseContent/Lect
 // import BatchCommandCenter from 'nihongo-hub/src/pages/BatchCommandCenter';
 
 function App() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const navigate = useNavigate();
   const location = useLocation(); // Helps us see where the user is trying to go
   const [isInitializing, setIsInitializing] = useState(true);
@@ -113,7 +112,7 @@ function App() {
 
       <Route path="/live-classrooms" element={
         <ProtectedRoute requiredRole="teacher">
-          <LiveClassrooms isDarkMode={isDarkMode} />
+          <LiveClassrooms />
         </ProtectedRoute>
       } />
 
@@ -125,7 +124,7 @@ function App() {
 
       <Route path="/teacher-batches" element={
         <ProtectedRoute requiredRole="teacher">
-          <TeacherBatches isDarkMode={isDarkMode} />
+          <TeacherBatches />
         </ProtectedRoute>
       } />
 

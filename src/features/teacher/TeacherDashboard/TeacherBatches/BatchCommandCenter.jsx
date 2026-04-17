@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { 
   Map, Database, Users, Settings, ArrowLeft, ExternalLink, Target 
 } from 'lucide-react';
@@ -19,7 +20,8 @@ import PathBuilderEngine from '@features/teacher/TeacherDashboard/TeacherBatches
 // Placeholder for your Dojo component
 // import PracticeDojoManager from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojoManager';
 
-export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
+export default function BatchCommandCenter({ batch, onClose }) {
+  const { isDarkMode } = useTheme();
   // We default to VAULT so you can see it immediately when it opens
   const [activeView, setActiveView] = useStickyState('VAULT', 'active-command-center-view'); 
   const [realName, setRealName] = useState("Loading...");
@@ -108,7 +110,7 @@ export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
           
           {activeView === 'PATH_BUILDER' && (
             <div className="animate-in fade-in duration-300">
-               <PathBuilderEngine batchId={batch.id} isDarkMode={isDarkMode} />
+               <PathBuilderEngine batchId={batch.id} />
             </div>
           )}
 
@@ -129,20 +131,20 @@ export default function BatchCommandCenter({ batch, onClose, isDarkMode }) {
           {/* 🚨 THE VAULT EDITOR */}
           {activeView === 'VAULT' && (
             <div className="animate-in fade-in duration-300">
-              <BatchVaultEditor batchData={batch} isDarkMode={isDarkMode} />
+              <BatchVaultEditor batchData={batch} />
             </div>
           )}
 
           {/* 🚨 THE STUDENT ROSTER */}
           {activeView === 'ROSTER' && (
             <div className="animate-in fade-in duration-300">
-              <BatchRoster batchData={batch} isDarkMode={isDarkMode} />
+              <BatchRoster batchData={batch} />
             </div>
           )}
 
           {activeView === 'SETTINGS' && (
             <div className="animate-in fade-in duration-300">
-              <BatchSettings batchData={batch} isDarkMode={isDarkMode} />
+              <BatchSettings batchData={batch} />
             </div>
           )}
 

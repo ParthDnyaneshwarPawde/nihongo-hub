@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
   Bell, Info, Lock, X, PlayCircle, ChevronRight, Download, BookOpen, Mic2, MessageSquare, Loader2, ShieldCheck, Zap, FileText, Globe
@@ -22,7 +23,7 @@ import LogoutShield from '@components/shared/LogoutShield';
 import ExamHub from '@features/student/ExamEngine/ExamHub';
 
 export default function StudentDashboard() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode } = useTheme();
   
   // Custom Hooks mapped out
   const {
@@ -96,7 +97,7 @@ export default function StudentDashboard() {
     <div className={`flex h-screen ${isDarkMode ? 'bg-[#0F172A] text-slate-200' : 'bg-[#F8FAFC] text-slate-900'} font-sans transition-colors duration-500 overflow-hidden relative`}>
       
       {/* LAYER 0: ZEN CANVAS BACKGROUND */}
-      <StudentZenCanvas isDarkMode={isDarkMode} />
+      <StudentZenCanvas />
 
       {/* LAYER 2: SIDEBAR */}
       <div className="z-[20] h-full shrink-0">
@@ -107,7 +108,6 @@ export default function StudentDashboard() {
           setIsDesktopSidebarCollapsed={setIsDesktopSidebarCollapsed}
           activeTab={activeTab}
           handleTabClick={handleTabClick}
-          isDarkMode={isDarkMode}
           requestLogout={requestLogout}
         />
       </div>
@@ -115,8 +115,6 @@ export default function StudentDashboard() {
       {/* MAIN CONTENT SHELL */}
       <main className="flex-1 flex flex-col overflow-hidden relative z-[10]">
         <StudentTopNav 
-          isDarkMode={isDarkMode}
-          setIsDarkMode={setIsDarkMode}
           setIsSidebarOpen={setIsSidebarOpen}
           isCourseMenuOpen={isCourseMenuOpen}
           setIsCourseMenuOpen={setIsCourseMenuOpen}
@@ -202,7 +200,7 @@ export default function StudentDashboard() {
     </div>
   </div>
 </section> */}
-                 <QuickStats level={level} isDarkMode={isDarkMode} batchId={activeBatchId} />
+                 <QuickStats level={level} batchId={activeBatchId} />
 
                  <section>
                     <div className="flex flex-col md:flex-row md:justify-between items-start md:items-end gap-3 md:gap-0 mb-8">
@@ -389,7 +387,7 @@ export default function StudentDashboard() {
             {activeTab === 'vault' && (
               <motion.div key="vault" variants={pageVariants} initial="initial" animate="animate" exit="exit">
                 {isDataLoaded ? (
-                  <ResourceVault selectedCourseTitle={level} enrolledCourseTitles={currentCourses} isDarkMode={isDarkMode} currentUser={currentUser}/>
+                  <ResourceVault selectedCourseTitle={level} enrolledCourseTitles={currentCourses} currentUser={currentUser}/>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-32 space-y-4">
                     <Loader2 className="animate-spin text-indigo-500" size={40} />
@@ -402,7 +400,7 @@ export default function StudentDashboard() {
             {activeTab === 'tests' && (
               <motion.div key="tests" variants={pageVariants} initial="initial" animate="animate" exit="exit">
                 {isDataLoaded ? (
-                  <ExamHub isDarkMode={isDarkMode} setIsDesktopSidebarCollapsed={setIsDesktopSidebarCollapsed} />
+                  <ExamHub setIsDesktopSidebarCollapsed={setIsDesktopSidebarCollapsed} />
                 ) : (
                   <div className="flex flex-col items-center justify-center py-32 space-y-4">
                     <Loader2 className="animate-spin text-indigo-500" size={40} />
@@ -417,7 +415,6 @@ export default function StudentDashboard() {
                 <CalendarPage 
                   level={level}
                   classes={allLevelClasses}
-                  isDarkMode={isDarkMode}
                   onBack={() => handleTabClick('learn')} 
                   onLiveClick={(cls) => {
                     setSelectedClass(cls);
@@ -622,7 +619,7 @@ export default function StudentDashboard() {
 
       </AnimatePresence>
 
-      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={isDarkMode} />
+      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} />
     </div>
   );
 }

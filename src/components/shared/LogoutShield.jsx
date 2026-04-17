@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Shield } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
 
 /**
  * LogoutShield — Glassmorphic Confirmation Modal
@@ -9,9 +10,9 @@ import { LogOut, Shield } from 'lucide-react';
  *   isOpen      {boolean}  — controls visibility
  *   onCancel    {fn}       — called when user clicks backdrop or "Stay"
  *   onConfirm   {fn}       — called when user clicks "Logout" (fires signOut)
- *   isDarkMode  {boolean}  — whether to use dark or light mode styling
  */
-export default function LogoutShield({ isOpen, onCancel, onConfirm, isDarkMode = true }) {
+export default function LogoutShield({ isOpen, onCancel, onConfirm }) {
+  const { isDarkMode } = useTheme();
   return (
     <AnimatePresence>
       {isOpen && (

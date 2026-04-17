@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { 
   Ticket, Plus, Trash2, Save, HardHat, Loader2
 } from 'lucide-react';
@@ -7,7 +8,8 @@ import {
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@services/firebase'; 
 
-export default function BatchSettings({ batchData, isDarkMode }) {
+export default function BatchSettings({ batchData }) {
+  const { isDarkMode } = useTheme();
   // Local state initialized from Firebase data
   const [coupons, setCoupons] = useState(batchData?.coupons || []);
   const [isSaving, setIsSaving] = useState(false); 

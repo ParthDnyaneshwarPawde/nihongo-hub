@@ -1,8 +1,10 @@
 import React from 'react';
 import { FileText, Download, FileArchive, PlayCircle, Eye, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function ResourceCard({ asset, isDarkMode, setViewingPdf }) {
+export default function ResourceCard({ asset, setViewingPdf }) {
+  const { isDarkMode } = useTheme();
   const isPDF = asset.type === 'PDF';
 
   const typeConfig = {

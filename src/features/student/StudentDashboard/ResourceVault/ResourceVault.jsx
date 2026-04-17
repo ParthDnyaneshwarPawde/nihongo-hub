@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { RefreshCw, ShieldAlert, ArrowRight, Lock, Activity, User, Layers, CheckCircle2 } from 'lucide-react';
@@ -13,7 +14,8 @@ import SearchBar from './components/SearchBar';
 import CategoryFilter from './components/CategoryFilter';
 import LibraryGrid from './components/LibraryGrid';
 
-export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolledCourseTitles = [], currentUser }) {
+export default function ResourceVault({ selectedCourseTitle, enrolledCourseTitles = [], currentUser }) {
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const [viewingPdf, setViewingPdf] = useState(null);
 
@@ -114,8 +116,8 @@ export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolle
           </div>
 
           <div className="grid grid-cols-2 gap-4 w-full lg:w-auto">
-            <VaultMetric label="Assets" val={rawAssets.length} icon={<Layers size={16}/>} color="indigo" isDark={isDarkMode} />
-            <VaultMetric label="Security" val="Verified" icon={<CheckCircle2 size={16}/>} color="emerald" isDark={isDarkMode} />
+            <VaultMetric label="Assets" val={rawAssets.length} icon={<Layers size={16}/>} color="indigo" />
+            <VaultMetric label="Security" val="Verified" icon={<CheckCircle2 size={16}/>} color="emerald" />
           </div>
         </div>
       </div>
@@ -123,12 +125,10 @@ export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolle
       {/* 🛠️ NAVIGATION DOCK */}
       <div className="flex flex-col xl:flex-row items-center gap-4 sticky top-4 z-40">
         <CategoryFilter 
-          isDarkMode={isDarkMode} 
           activeFilter={activeFilter} 
           setActiveFilter={setActiveFilter} 
         />
         <SearchBar 
-          isDarkMode={isDarkMode} 
           searchQuery={searchQuery} 
           setSearchQuery={setSearchQuery} 
         />
@@ -137,7 +137,6 @@ export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolle
       {/* 📚 KINETIC GRID ENGINE */}
       <LibraryGrid 
         assets={filteredAssets} 
-        isDarkMode={isDarkMode} 
         setViewingPdf={setViewingPdf} 
       />
 
@@ -150,7 +149,6 @@ export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolle
           }} className="animate-in fade-in duration-300 flex flex-col">
           <SecureViewer 
             fileUrl={viewingPdf.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} 
-            isDarkMode={isDarkMode} 
             userEmail={currentUser?.email || "Protected Student"}
             onClose={() => setViewingPdf(null)} 
           />
@@ -162,17 +160,18 @@ export default function ResourceVault({ isDarkMode, selectedCourseTitle, enrolle
 }
 
 // Internal Helper for Dashboard
-function VaultMetric({ label, val, icon, color, isDark }) {
+function VaultMetric({ label, val, icon, color }) {
+  const { isDarkMode } = useTheme();
   const themes = {
     indigo: 'bg-indigo-600/10 text-indigo-500 border-indigo-500/20 shadow-indigo-500/5',
     emerald: 'bg-emerald-600/10 text-emerald-500 border-emerald-500/20 shadow-emerald-500/5',
   };
   return (
-    <div className={`p-4 rounded-3xl border flex items-center gap-4 transition-all hover:scale-105 ${isDark ? 'bg-slate-900/50 border-white/5 shadow-black/40' : 'bg-slate-50 border-slate-200 shadow-sm'}`}>
+    <div className={`p-4 rounded-3xl border flex items-center gap-4 transition-all hover:scale-105 ${isDarkMode ? 'bg-slate-900/50 border-white/5 shadow-black/40' : 'bg-slate-50 border-slate-200 shadow-sm'}`}>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-inner ${themes[color]}`}>{icon}</div>
       <div>
         <p className="text-[8px] font-black uppercase text-slate-500 tracking-widest leading-none mb-1">{label}</p>
-        <p className={`text-xl font-black tracking-tighter ${isDark ? 'text-white' : 'text-slate-900'}`}>{val}</p>
+        <p className={`text-xl font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{val}</p>
       </div>
     </div>
   );

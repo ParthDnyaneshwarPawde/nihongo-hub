@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function AnimatedKanji({ isDarkMode }) {
+export default function AnimatedKanji() {
+  const { isDarkMode } = useTheme();
   // Phases: 'tracing' -> 'surge' -> 'settled'
   const [phase, setPhase] = useState('tracing');
 

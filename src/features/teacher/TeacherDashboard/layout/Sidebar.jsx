@@ -3,6 +3,7 @@ import { X, BarChart3, Tv, Users, BookOpen, Calendar, Settings, LogOut, ChevronL
 import { motion } from 'framer-motion';
 import { useLogoutConfirm } from '@hooks/useLogoutConfirm';
 import LogoutShield from '@components/shared/LogoutShield';
+import { useTheme } from '@/context/ThemeContext';
 
 function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode, isCollapsed }) {
   const activeClass = "bg-rose-600 text-white shadow-xl shadow-rose-600/30 ring-1 ring-white/10";
@@ -44,11 +45,11 @@ export default function Sidebar({
   closeSidebar, 
   activeTab, 
   onNavigate, 
-  isDarkMode, 
   currentUser,
   isDesktopSidebarCollapsed,
   setIsDesktopSidebarCollapsed 
 }) {
+  const { isDarkMode } = useTheme();
   const { isConfirming, requestLogout, cancelLogout, confirmLogout } = useLogoutConfirm();
 
   return (
@@ -150,7 +151,7 @@ export default function Sidebar({
       </aside>
 
       {/* Confirmation Shield — z-[100] sits above all navigation */}
-      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={isDarkMode} />
+      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} />
     </>
   );
 }

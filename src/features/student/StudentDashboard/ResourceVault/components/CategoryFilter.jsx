@@ -1,8 +1,10 @@
 import React from 'react';
+import { useTheme } from '@/context/ThemeContext';
 
 const CATEGORIES = ['ALL', 'CHEAT_SHEETS', 'AUDIO_PACKS', 'FLASHCARDS', 'MOCK_TESTS'];
 
-export default function CategoryFilter({ isDarkMode, activeFilter, setActiveFilter }) {
+export default function CategoryFilter({ activeFilter, setActiveFilter }) {
+  const { isDarkMode } = useTheme();
   return (
     <div className={`p-2 rounded-[2.5rem] border backdrop-blur-xl shadow-2xl flex items-center gap-2 overflow-x-auto hide-scrollbar w-full xl:w-auto ${isDarkMode ? 'bg-[#0B1120]/80 border-white/5' : 'bg-white/90 border-slate-200'}`}>
       {CATEGORIES.map((id) => (

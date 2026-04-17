@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useStickyState } from '@hooks/useStickyState';
 import { 
   Users, UserCheck, ShieldAlert, Search, 
@@ -11,7 +12,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '@services/firebase';
 
-export default function BatchRoster({ batchData, isDarkMode }) {
+export default function BatchRoster({ batchData }) {
+  const { isDarkMode } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useStickyState('PENDING', 'teacher-batch-roster-tab');
   

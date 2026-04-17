@@ -1,10 +1,9 @@
 import React from 'react';
 import { Menu, BookOpen, ChevronRight, Clock, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function StudentTopNav({
-  isDarkMode,
-  setIsDarkMode,
   setIsSidebarOpen,
   isCourseMenuOpen,
   setIsCourseMenuOpen,
@@ -17,6 +16,7 @@ export default function StudentTopNav({
   setIsProfileModalOpen
 }) {
   const navigate = useNavigate();
+  const { isDarkMode, toggleTheme } = useTheme();
 
   return (
     <header className={`h-20 border-b backdrop-blur-md px-4 lg:px-10 flex items-center justify-between sticky top-0 z-50 transition-colors ${isDarkMode ? 'bg-[#0F172A]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
@@ -124,7 +124,7 @@ export default function StudentTopNav({
       </div>
 
       <div className="flex items-center gap-2 lg:gap-4">
-        <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2 lg:p-2.5 rounded-xl border transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+        <button onClick={toggleTheme} className={`p-2 lg:p-2.5 rounded-xl border transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800 hover:bg-slate-700' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
           {isDarkMode ? <Zap size={16} className="text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.3)]" /> : <Clock size={16} className="text-slate-600" />}
         </button>
         <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>

@@ -1,7 +1,9 @@
 import React from 'react';
 import { Search } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function SearchBar({ isDarkMode, searchQuery, setSearchQuery }) {
+export default function SearchBar({ searchQuery, setSearchQuery }) {
+  const { isDarkMode } = useTheme();
   return (
     <div className={`relative flex-1 w-full xl:w-80 group`}>
       <Search size={18} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-500 transition-colors" />

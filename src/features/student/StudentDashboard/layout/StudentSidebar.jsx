@@ -3,6 +3,7 @@ import {
   Globe, Download, MessageCircle, BarChart3, FileText, Settings, LogOut, Trophy, X, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, Target
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
 function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode, isCollapsed }) {
   const activeClass = "bg-indigo-600 text-white shadow-xl shadow-indigo-600/30 ring-1 ring-white/10";
@@ -47,9 +48,9 @@ export default function StudentSidebar({
   setIsDesktopSidebarCollapsed,
   activeTab, 
   handleTabClick, 
-  isDarkMode, 
   requestLogout 
 }) {
+  const { isDarkMode } = useTheme();
   return (
     <>
       {/* MOBILE OVERLAY */}

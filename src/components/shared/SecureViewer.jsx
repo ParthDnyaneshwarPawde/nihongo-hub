@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, 
@@ -11,7 +12,8 @@ import {
 // ).toString();
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-export default function SecureViewer({ fileUrl, userEmail = "Authorized Student", isDarkMode, onClose }) {
+export default function SecureViewer({ fileUrl, userEmail = "Authorized Student", onClose }) {
+  const { isDarkMode } = useTheme();
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageWidth, setPageWidth] = useState(window.innerWidth);

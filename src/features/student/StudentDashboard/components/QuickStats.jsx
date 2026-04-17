@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { 
   Zap, PlayCircle, ChevronRight, Sparkles, Rocket, 
   Trophy, Target, Flame, Loader2 
@@ -11,7 +12,8 @@ import { db, auth } from '@services/firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; // 🚨 NEW IMPORT
 
-export default function QuickStats({ isDarkMode, batchId: propBatchId }) {
+export default function QuickStats({ batchId: propBatchId }) {
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   
   // Accept batchId from URL params OR as a direct prop
@@ -174,11 +176,11 @@ export default function QuickStats({ isDarkMode, batchId: propBatchId }) {
             transition={{ delay: 0.4 }}
             className="flex flex-wrap items-center gap-4 md:gap-8"
           >
-            <StatItem icon={<Flame size={16}/>} label="Streak" value="12 Days" color="text-orange-500" isDark={isDarkMode} />
+            <StatItem icon={<Flame size={16}/>} label="Streak" value="12 Days" color="text-orange-500" />
             <div className={`hidden sm:block h-8 w-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
-            <StatItem icon={<Trophy size={16}/>} label="Rank" value="Samurai" color="text-indigo-500" isDark={isDarkMode} />
+            <StatItem icon={<Trophy size={16}/>} label="Rank" value="Samurai" color="text-indigo-500" />
             <div className={`hidden sm:block h-8 w-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
-            <StatItem icon={<Target size={16}/>} label="Goal" value="80%" color="text-emerald-500" isDark={isDarkMode} />
+            <StatItem icon={<Target size={16}/>} label="Goal" value="80%" color="text-emerald-500" />
           </motion.div>
         </div>
 
@@ -264,15 +266,16 @@ export default function QuickStats({ isDarkMode, batchId: propBatchId }) {
   );
 }
 
-function StatItem({ icon, label, value, color, isDark }) {
+function StatItem({ icon, label, value, color }) {
+  const { isDarkMode } = useTheme();
   return (
     <div className="flex items-center gap-3 py-1.5 group/stat">
-      <div className={`p-2.5 rounded-xl transition-all group-hover/stat:scale-105 ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-white shadow-sm border border-slate-100 text-slate-500'} ${color}`}>
+      <div className={`p-2.5 rounded-xl transition-all group-hover/stat:scale-105 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white shadow-sm border border-slate-100 text-slate-500'} ${color}`}>
         {icon}
       </div>
       <div>
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-0.5">{label}</p>
-        <p className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>{value}</p>
+        <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{value}</p>
       </div>
     </div>
   );

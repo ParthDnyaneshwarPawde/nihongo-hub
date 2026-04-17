@@ -2,15 +2,16 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
 import ClassroomCard from './ClassroomCard';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function ClassroomGrid({ 
   liveSessions, 
   myBatches, 
   currentUser, 
-  isDarkMode,
   onJoinClick,
   onEndSession
 }) {
+  const { isDarkMode } = useTheme();
   if (liveSessions.length === 0) {
     return (
       <motion.div 
@@ -42,7 +43,6 @@ export default function ClassroomGrid({
             key={cls.id}
             cls={cls}
             index={index}
-            isDarkMode={isDarkMode}
             isHost={isHost}
             isBatchTeacher={isBatchTeacher}
             requiresPassword={requiresPassword}

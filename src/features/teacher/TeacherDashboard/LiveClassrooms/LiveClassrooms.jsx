@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { LayoutGroup, motion, AnimatePresence } from 'framer-motion';
 import { Video } from 'lucide-react';
@@ -11,7 +12,8 @@ import ClassroomHeader from './components/ClassroomHeader';
 import ClassroomGrid from './components/ClassroomGrid';
 import PasswordModal from './components/PasswordModal';
 
-export default function LiveClassrooms({ isDarkMode }) {
+export default function LiveClassrooms() {
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const { liveSessions, myBatches, currentUser, isLoading } = useClassroomSession();
 
@@ -107,14 +109,12 @@ export default function LiveClassrooms({ isDarkMode }) {
           <LayoutGroup>
             <ClassroomHeader 
               liveSessionsCount={liveSessions.length} 
-              isDarkMode={isDarkMode} 
             />
             
             <ClassroomGrid 
               liveSessions={liveSessions}
               myBatches={myBatches}
               currentUser={currentUser}
-              isDarkMode={isDarkMode}
               onJoinClick={handleJoinClick}
               onEndSession={handleEndSession}
             />
@@ -130,7 +130,6 @@ export default function LiveClassrooms({ isDarkMode }) {
           setEnteredPassword={setEnteredPassword}
           passwordError={passwordError}
           onSubmit={handlePasswordSubmit}
-          isDarkMode={isDarkMode}
         />
       </motion.div>
     </AnimatePresence>

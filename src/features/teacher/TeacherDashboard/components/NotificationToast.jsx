@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
-export default function NotificationToast({ isDarkMode, message, isVisible, onClose }) {
+export default function NotificationToast({ message, isVisible, onClose }) {
+  const { isDarkMode } = useTheme();
   // Placeholder structure mapping for future global toast system
   return (
     <AnimatePresence>

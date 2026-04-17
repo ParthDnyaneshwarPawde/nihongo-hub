@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, updateDoc, doc, query, where, limit, onSnapshot, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '@services/firebase';
@@ -9,7 +10,8 @@ import { motion } from 'framer-motion';
 
 
 // Helper Components
-function StatMini({ label, value, color, isDarkMode }) {
+function StatMini({ label, value, color }) {
+  const { isDarkMode } = useTheme();
   const colors = { emerald: 'text-emerald-500', indigo: 'text-indigo-500', rose: 'text-rose-500', amber: 'text-amber-500' };
   return (
     <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-900/30 border-slate-800' : 'bg-white border-slate-200'}`}>
@@ -19,7 +21,8 @@ function StatMini({ label, value, color, isDarkMode }) {
   );
 }
 
-function ActionBtn({ icon, title, sub, theme, onClick, isDarkMode }) {
+function ActionBtn({ icon, title, sub, theme, onClick }) {
+  const { isDarkMode } = useTheme();
   const accents = {
     indigo: 'text-indigo-600 dark:text-indigo-400 border-indigo-500/20 hover:border-indigo-500',
     emerald: 'text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:border-emerald-500',
@@ -37,7 +40,8 @@ function ActionBtn({ icon, title, sub, theme, onClick, isDarkMode }) {
   );
 }
 
-function StudentItem({ name, level, activity, isDarkMode }) {
+function StudentItem({ name, level, activity }) {
+  const { isDarkMode } = useTheme();
   return (
     <div className={`flex items-center justify-between p-6 transition-colors ${isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50'}`}>
       <div className="flex items-center gap-4">
@@ -56,7 +60,8 @@ function StudentItem({ name, level, activity, isDarkMode }) {
   );
 }
 
-function TaskItem({ title, date, level, status, isDarkMode }) {
+function TaskItem({ title, date, level, status }) {
+  const { isDarkMode } = useTheme();
   const statusColors = { Live: 'text-emerald-500', Draft: 'text-slate-500', Scheduled: 'text-amber-500' };
   return (
     <div className={`p-5 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
@@ -78,7 +83,8 @@ function TaskItem({ title, date, level, status, isDarkMode }) {
   );
 }
 
-const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName, isDarkMode }) => {
+const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName }) => {
+  const { isDarkMode } = useTheme();
   const [isSaving, setIsSaving] = useState(false);
   const [dynamicBatches, setDynamicBatches] = useState([]); // 🚨 NEW: Stores your real batches
   
@@ -258,13 +264,14 @@ const ClassLaunchModal = ({ isOpen, onClose, onNext, currentTeacherName, isDarkM
 };
 
 export default function DashboardHome({ 
-  isDarkMode, currentUser, isLive, isModalOpen, setIsModalOpen,
+  currentUser, isLive, isModalOpen, setIsModalOpen,
   tempClassData, bulletinMessage, setBulletinMessage, bulletinTitle, setBulletinTitle, isBroadcasting, 
   step, activeType, roomPassword, setRoomPassword, isProcessing, error, 
   myUpcomingClasses, activateScheduledClass, handleTypeSelection, 
   handleSaveClass, launchClass, resetForm, endSession, 
   deleteScheduledClass, broadcastBulletin, dynamicBatches, setBulletinTarget, bulletinTarget
 }) {
+  const { isDarkMode } = useTheme();
 
   return (
     <>
@@ -281,10 +288,10 @@ export default function DashboardHome({
             <p className={`text-lg font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Managing <span className="text-indigo-500 font-bold">1,284 students</span> across 5 JLPT levels.</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full lg:w-auto">
-            <StatMini label="Active" value="42" color="emerald" isDarkMode={isDarkMode} />
-            <StatMini label="Pass Rate" value="92%" color="indigo" isDarkMode={isDarkMode} />
-            <StatMini label="New Leads" value="+12" color="rose" isDarkMode={isDarkMode} />
-            <StatMini label="Revenue" value="1.2k" color="amber" isDarkMode={isDarkMode} />
+            <StatMini label="Active" value="42" color="emerald" />
+            <StatMini label="Pass Rate" value="92%" color="indigo" />
+            <StatMini label="New Leads" value="+12" color="rose" />
+            <StatMini label="Revenue" value="1.2k" color="amber" />
           </div>
         </section>
 
@@ -353,15 +360,15 @@ export default function DashboardHome({
                   <div className="flex flex-wrap justify-center gap-6 animate-in fade-in duration-500">
                     
                     <div className="flex-1 min-w-[240px] max-w-[400px]">
-                      <ActionBtn icon={<Video size={24}/>} title="Video Class" sub="High Bandwidth" theme="indigo" isDarkMode={isDarkMode} onClick={() => handleTypeSelection('Video')} />
+                      <ActionBtn icon={<Video size={24}/>} title="Video Class" sub="High Bandwidth" theme="indigo" onClick={() => handleTypeSelection('Video')} />
                     </div>
                     
                     <div className="flex-1 min-w-[240px] max-w-[400px]">
-                      <ActionBtn icon={<Mic2 size={24}/>} title="Audio Lounge" sub="Community" theme="emerald" isDarkMode={isDarkMode} onClick={() => handleTypeSelection('Audio')} />
+                      <ActionBtn icon={<Mic2 size={24}/>} title="Audio Lounge" sub="Community" theme="emerald" onClick={() => handleTypeSelection('Audio')} />
                     </div>
                     
                     <div className="flex-1 min-w-[240px] max-w-[400px]">
-                      <ActionBtn icon={<Tv size={24}/>} title="Broadcast" sub="One-Way" theme="rose" isDarkMode={isDarkMode} onClick={() => handleTypeSelection('Broadcast')} />
+                      <ActionBtn icon={<Tv size={24}/>} title="Broadcast" sub="One-Way" theme="rose" onClick={() => handleTypeSelection('Broadcast')} />
                     </div>
                     
                   </div>
@@ -492,10 +499,10 @@ export default function DashboardHome({
               <Filter size={18} className="text-slate-500 cursor-pointer" />
             </div>
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              <StudentItem name="Arjun Sharma" level="N4" activity="Grammar Unit 4" isDarkMode={isDarkMode} />
-              <StudentItem name="Priya Singh" level="N5" activity="Taking Mock Test" isDarkMode={isDarkMode} />
-              <StudentItem name="Kevin Kovacs" level="N2" activity="Vocab Drill" isDarkMode={isDarkMode} />
-              <StudentItem name="Sarah Miller" level="N3" activity="Idle" isDarkMode={isDarkMode} />
+              <StudentItem name="Arjun Sharma" level="N4" activity="Grammar Unit 4" />
+              <StudentItem name="Priya Singh" level="N5" activity="Taking Mock Test" />
+              <StudentItem name="Kevin Kovacs" level="N2" activity="Vocab Drill" />
+              <StudentItem name="Sarah Miller" level="N3" activity="Idle" />
             </div>
             <button className="w-full py-5 text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">View All Students</button>
           </div>
@@ -506,9 +513,9 @@ export default function DashboardHome({
               <button className="p-2 bg-indigo-500/10 text-indigo-500 rounded-lg"><Plus size={20}/></button>
             </div>
             <div className="space-y-4">
-              <TaskItem title="N4 Weekly Kanji Quiz" date="Mar 18" level="N4" status="Scheduled" isDarkMode={isDarkMode} />
-              <TaskItem title="Genki II Ch. 4 Vocab" date="Mar 20" level="N5" status="Draft" isDarkMode={isDarkMode} />
-              <TaskItem title="N3 Full Mock Exam" date="Mar 25" level="N3" status="Live" isDarkMode={isDarkMode} />
+              <TaskItem title="N4 Weekly Kanji Quiz" date="Mar 18" level="N4" status="Scheduled" />
+              <TaskItem title="Genki II Ch. 4 Vocab" date="Mar 20" level="N5" status="Draft" />
+              <TaskItem title="N3 Full Mock Exam" date="Mar 25" level="N3" status="Live" />
             </div>
           </div>
         </section>
@@ -535,7 +542,6 @@ export default function DashboardHome({
         onClose={() => setIsModalOpen(false)} 
         onNext={handleSaveClass} 
         currentTeacherName={currentUser?.displayName || "Sensei"} 
-        isDarkMode={isDarkMode} 
       />
     </>
   );

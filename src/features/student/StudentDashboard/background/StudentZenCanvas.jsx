@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { useTheme } from '@/context/ThemeContext';
 
 function FloatingKanji({ 
   kanji, 
@@ -8,10 +9,10 @@ function FloatingKanji({
   size, 
   duration, 
   delay, 
-  isDarkMode, 
   opacityLight = 0.04, 
   opacityDark = 0.03 
 }) {
+  const { isDarkMode } = useTheme();
   return (
     <motion.div
       initial={{ x: x - 50, y: y + 50, opacity: 0 }}
@@ -34,7 +35,7 @@ function FloatingKanji({
   );
 }
 
-export default function StudentZenCanvas({ isDarkMode }) {
+export default function StudentZenCanvas() {
   // Layer 0 - The Zen Background
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
@@ -45,7 +46,6 @@ export default function StudentZenCanvas({ isDarkMode }) {
         size="text-[400px] lg:text-[600px]" 
         duration={25}
         delay={0}
-        isDarkMode={isDarkMode}
       />
       <FloatingKanji 
         kanji="進捗" 
@@ -54,7 +54,6 @@ export default function StudentZenCanvas({ isDarkMode }) {
         size="text-[300px] lg:text-[400px]" 
         duration={30}
         delay={2}
-        isDarkMode={isDarkMode}
       />
       <FloatingKanji 
         kanji="授業" 
@@ -63,7 +62,6 @@ export default function StudentZenCanvas({ isDarkMode }) {
         size="text-[250px] lg:text-[350px]" 
         duration={35}
         delay={5}
-        isDarkMode={isDarkMode}
         opacityLight={0.02}
         opacityDark={0.015}
       />

@@ -1,4 +1,5 @@
 import React, { useRef, Suspense } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Text, Environment, Float, Center } from '@react-three/drei';
 import { EffectComposer, DepthOfField, Bloom, Noise } from '@react-three/postprocessing';
@@ -89,7 +90,8 @@ function LightningKanji({ text, position, rotation, delay, scale = 1, zOffset = 
   );
 }
 
-export default function BackgroundCanvas({ isDarkMode }) {
+export default function BackgroundCanvas() {
+  const { isDarkMode } = useTheme();
   const [isMobile, setIsMobile] = React.useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
   React.useEffect(() => {

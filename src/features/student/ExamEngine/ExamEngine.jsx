@@ -676,7 +676,7 @@ export default function ExamEngine() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Display</p>
-                <ToggleRow title="Solution Mode" desc="See the solution directly when reopening an attempted question" state={settings.solutionMode} onClick={() => setSettings({...settings, solutionMode: !settings.solutionMode})} isDarkMode={isDarkMode} />
+                <ToggleRow title="Solution Mode" desc="See the solution directly when reopening an attempted question" state={settings.solutionMode} onClick={() => setSettings({...settings, solutionMode: !settings.solutionMode})} />
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-700/50">
                   <div className="flex justify-between items-center mb-3 mt-2"><p className={`text-sm font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Text Size</p></div>
                   <div className={`flex rounded-xl p-1 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
@@ -689,13 +689,13 @@ export default function ExamEngine() {
 
               <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Experience</p>
-                <ToggleRow title="Auto-start Timer" desc="Timer begins immediately on new questions" state={settings.autoStartTimer} onClick={() => setSettings({...settings, autoStartTimer: !settings.autoStartTimer})} isDarkMode={isDarkMode} />
-                <ToggleRow title="Play Sounds" desc="Audio feedback for correct/incorrect answers" state={settings.playSounds} onClick={() => setSettings({...settings, playSounds: !settings.playSounds})} isDarkMode={isDarkMode} />
+                <ToggleRow title="Auto-start Timer" desc="Timer begins immediately on new questions" state={settings.autoStartTimer} onClick={() => setSettings({...settings, autoStartTimer: !settings.autoStartTimer})} />
+                <ToggleRow title="Play Sounds" desc="Audio feedback for correct/incorrect answers" state={settings.playSounds} onClick={() => setSettings({...settings, playSounds: !settings.playSounds})} />
               </div>
 
                <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Insights</p>
-                <ToggleRow title="Show Peer Stats" desc="See what percentage of students chose each option" state={settings.showPeerStats} onClick={() => setSettings({...settings, showPeerStats: !settings.showPeerStats})} isDarkMode={isDarkMode} />
+                <ToggleRow title="Show Peer Stats" desc="See what percentage of students chose each option" state={settings.showPeerStats} onClick={() => setSettings({...settings, showPeerStats: !settings.showPeerStats})} />
               </div>
             </div>
           </div>
@@ -710,7 +710,8 @@ export default function ExamEngine() {
   );
 }
 
-function ToggleRow({ title, desc, state, onClick, isDarkMode }) {
+function ToggleRow({ title, desc, state, onClick }) {
+  const { isDarkMode } = useTheme();
   return (
     <div className="flex items-start justify-between gap-4 cursor-pointer group" onClick={onClick}>
       <div>
