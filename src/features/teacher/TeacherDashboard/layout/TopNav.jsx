@@ -20,7 +20,7 @@ export default function TopNav({ toggleSidebar }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <ZenToggle isDarkMode={isDarkMode} onToggle={toggleTheme} />
+        <ZenToggle />
         <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block"></div>
         <button className={`p-2.5 rounded-xl border relative transition-all ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'}`}>
           <Bell size={18} />

@@ -278,7 +278,7 @@ export default function ProfileSettings() {
       </main>
 
       {/* Confirmation Shield */}
-      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={false} />
+      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} />
     </div>
   );
 }

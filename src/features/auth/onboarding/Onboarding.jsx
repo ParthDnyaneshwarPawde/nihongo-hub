@@ -132,7 +132,7 @@ export default function Onboarding() {
         </div>
       </div>
       {/* Confirmation Shield — sits above everything */}
-      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} isDarkMode={true} />
+      <LogoutShield isOpen={isConfirming} onCancel={cancelLogout} onConfirm={confirmLogout} />
     </div>
   );
 }

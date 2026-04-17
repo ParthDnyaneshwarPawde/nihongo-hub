@@ -5,7 +5,8 @@ import { useLogoutConfirm } from '@hooks/useLogoutConfirm';
 import LogoutShield from '@components/shared/LogoutShield';
 import { useTheme } from '@/context/ThemeContext';
 
-function SidebarLink({ icon, label, active, onClick, danger, badge, isDarkMode, isCollapsed }) {
+function SidebarLink({ icon, label, active, onClick, danger, badge, isCollapsed }) {
+  const { isDarkMode } = useTheme();
   const activeClass = "bg-rose-600 text-white shadow-xl shadow-rose-600/30 ring-1 ring-white/10";
   const inactiveClass = isDarkMode ? "text-slate-500 hover:bg-slate-800 hover:text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900";
   const dangerClass = "text-slate-500 hover:bg-rose-500/10 hover:text-rose-500";
@@ -106,19 +107,19 @@ export default function Sidebar({
         {/* Navigation */}
         <nav className={`flex-1 space-y-1 overflow-y-auto custom-scrollbar ${isDesktopSidebarCollapsed ? 'lg:px-2 px-4' : 'px-4'}`}>
           <p className={`text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 px-4 opacity-60 ${isDesktopSidebarCollapsed ? 'lg:hidden block' : 'block'}`}>Control</p>
-          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<BarChart3 size={18}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => onNavigate('dashboard')} isDarkMode={isDarkMode} />
-          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Tv size={18}/>} label="Live Classroom" active={activeTab === 'live'} onClick={() => onNavigate('live')} isDarkMode={isDarkMode} />
-          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Users size={18}/>} label="Student Database" active={activeTab === 'students'} onClick={() => onNavigate('students')} isDarkMode={isDarkMode} />
+          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<BarChart3 size={18}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => onNavigate('dashboard')} />
+          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Tv size={18}/>} label="Live Classroom" active={activeTab === 'live'} onClick={() => onNavigate('live')} />
+          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Users size={18}/>} label="Student Database" active={activeTab === 'students'} onClick={() => onNavigate('students')} />
           
           <div className={`pt-8 mt-8 border-t border-slate-100 dark:border-slate-800 ${isDesktopSidebarCollapsed ? 'lg:mx-2 mx-0' : ''}`}>
             <p className={`text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 px-4 opacity-60 ${isDesktopSidebarCollapsed ? 'lg:hidden block' : 'block'}`}>Management</p>
-            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<BookOpen size={18}/>} label="Course Materials" active={activeTab === 'materials'} isDarkMode={isDarkMode} onClick={() => onNavigate('materials')} />
-            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Calendar size={18}/>} label="Exam Scheduler" active={activeTab === 'exams'} onClick={() => onNavigate('exams')} isDarkMode={isDarkMode} />
+            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<BookOpen size={18}/>} label="Course Materials" active={activeTab === 'materials'} onClick={() => onNavigate('materials')} />
+            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Calendar size={18}/>} label="Exam Scheduler" active={activeTab === 'exams'} onClick={() => onNavigate('exams')} />
           </div>
 
           <div className={`pt-8 mt-8 border-t border-slate-100 dark:border-slate-800 ${isDesktopSidebarCollapsed ? 'lg:mx-2 mx-0' : ''}`}>
-            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Settings size={18}/>} label="Settings" isDarkMode={isDarkMode} />
-            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<LogOut size={18}/>} label="Logout" danger isDarkMode={isDarkMode} onClick={requestLogout} />
+            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Settings size={18}/>} label="Settings" />
+            <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<LogOut size={18}/>} label="Logout" danger onClick={requestLogout} />
           </div>
         </nav>
 
