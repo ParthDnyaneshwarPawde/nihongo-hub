@@ -11,14 +11,14 @@ import Onboarding from '@features/auth/onboarding/Onboarding';
 import StudentDashboard from '@features/student/StudentDashboard/StudentDashboard';
 import CourseCatalog from '@features/student/StudentDashboard/CourseCatalog';
 import ProfileSettings from '@features/student/StudentDashboard/ProfileSettings';
-import ExamEngine from '@features/student/ExamEngine/ExamEngine'; // 🚨 NEW IMPORT
+import ExamEngine from '@features/student/StudentDashboard/ExamEngine/ExamEngine'; // 🚨 NEW IMPORT
 import TeacherDashboard from '@features/teacher/TeacherDashboard/TeacherDashboard';
 import TeacherBatches from '@features/teacher/TeacherDashboard/TeacherBatches/TeacherBatches';
 import LiveClassrooms from '@features/teacher/TeacherDashboard/LiveClassrooms/LiveClassrooms';
 import Room from '@features/teacher/TeacherDashboard/services/Room';
 import ProtectedRoute from '@components/shared/ProtectedRoute';
 import ExamHub from '@features/student/ExamEngine/ExamHub';
-import QuestionForge from '@features/teacher/TeacherDashboard/TeacherBatches/QuestionForge';
+import QuestionForge from '@features/teacher/TeacherDashboard/TeacherBatches/QuestionForge/QuestionForge';
 import LectureViewer from '@features/student/StudentDashboard/CourseContent/LectureViewer';
 // import BatchCommandCenter from 'nihongo-hub/src/pages/BatchCommandCenter';
 
