@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { db, auth } from '@services/firebase'; 
-import { doc, getDoc, serverTimestamp, writeBatch, collection } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, writeBatch, collection } from 'firebase/firestore';
 import { useTheme } from '@/context/ThemeContext'; 
+import { motion, AnimatePresence } from 'framer-motion';
+// 🚨 UPGRADE: Removed Edit3, added StickyNote and X for the new Dialog
+import { AlertTriangle, CheckCircle2, Info, Lightbulb, Save, MessageSquare, StickyNote, X } from 'lucide-react';
 
 import { useExamSession } from './hooks/useExamSession';
 import { useExamTelemetry } from './hooks/useExamTelemetry';
@@ -15,7 +18,46 @@ import SettingsDrawer from './components/SettingsDrawer';
 import QuestionDisplay from './components/QuestionArea/QuestionDisplay';
 import ChoiceInterface from './components/QuestionArea/ChoiceInterface';
 import TextInterface from './components/QuestionArea/TextInterface';
+import KanjiInterface from './components/QuestionArea/KanjiInterface';
 import PostAttemptFeedback from './components/QuestionArea/PostAttemptFeedback';
+
+// --- 🚨 AUDIO FEEDBACK GENERATOR ---
+const playAudioFeedback = (isCorrect) => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (isCorrect) {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(); osc.stop(ctx.currentTime + 0.3);
+    } else {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(300, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start(); osc.stop(ctx.currentTime + 0.2);
+    }
+  } catch (e) { console.error("Audio failed:", e); }
+};
+
+const DEFAULT_SETTINGS = {
+  showHint: true,
+  showMyNote: true,
+  solutionMode: false,
+  autoStartTimer: true,
+  playSounds: true,
+  delayCorrectAnswer: false,
+  textSize: 'medium',
+  showPeerStats: true
+};
 
 export default function ExamEngine() {
   const navigate = useNavigate();
@@ -29,13 +71,52 @@ export default function ExamEngine() {
   const [timeSpent, setTimeSpent] = useState(0); 
   const [totalTimeSpent, setTotalTimeSpent] = useState(0); 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState({ solutionMode: false, autoStartTimer: true, playSounds: true, textSize: 'medium', showPeerStats: true });
+  const [isNextLoading, setIsNextLoading] = useState(false);
+
+  // 🚨 NEW: State for the Notes Dialog
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
 
   const session = useExamSession(questions);
-  const telemetry = useExamTelemetry(session.currentQ?.id);
+  const timeSpentRef = useRef({});
+
+  const [proctorWarning, setProctorWarning] = useState(null);
+  const [violationCount, setViolationCount] = useState(0);
+  const [showRatingPrompt, setShowRatingPrompt] = useState(false);
+  const [fatalViolation, setFatalViolation] = useState(false);
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showHintModal, setShowHintModal] = useState(false); 
+  
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('nihongo_settings');
+    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+  });
+
+  const [isTimerRunning, setIsTimerRunning] = useState(settings.autoStartTimer);
 
   useEffect(() => {
+    localStorage.setItem('nihongo_settings', JSON.stringify(settings));
+  }, [settings]);
+
+  const handleViolation = useCallback((type, count) => {
+    setViolationCount(count);
+    if (count < 10) {
+      setProctorWarning({ type, count });
+    }
+  }, []);
+  
+  const telemetry = useExamTelemetry(session.currentQ?.id, handleViolation, examState === 'active');
+
+  useEffect(() => {
+    if (violationCount >= 10 && examState === 'active') {
+      setProctorWarning(null);
+      setFatalViolation(true); 
+      finishExam(true); 
+    }
+  }, [violationCount, examState]);
+  
+  useEffect(() => {
     const loadExam = async () => {
+      if (!batchId || !modId || !exerciseId) return navigate('/student-dashboard');
       try {
         const exerciseSnap = await getDoc(doc(db, 'batches', batchId, 'module', modId, 'chapters', chapId, 'exercises', exerciseId));
         if (!exerciseSnap.exists()) return navigate(-1);
@@ -46,11 +127,18 @@ export default function ExamEngine() {
         if (qIds.length === 0) return setExamState('intro');
 
         const questionSnaps = await Promise.all(qIds.map(id => getDoc(doc(db, `question_bank/${batchId}/questions`, id))));
+        
         const formattedQuestions = questionSnaps.filter(snap => snap.exists()).map(snap => {
           const q = snap.data();
           return {
-            ...q, type: q.type, prompt: q.promptText || '', mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
-            correctOptions: q.options?.filter(o => o.isCorrect).map(o => o.id) || [], options: q.options || [], explanation: q.officialSolution?.text || "No explanation provided."
+            ...q, 
+            type: q.type, 
+            prompt: q.promptText || '', 
+            mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
+            correctOptions: q.type.includes('choice') ? (q.options?.filter(o => o.isCorrect).map(o => o.id) || []) : (q.correctAnswers || q.correctOptions || []), 
+            options: q.options || [], 
+            explanation: q.officialSolution?.text || "No explanation provided.",
+            hint: q.hintText || q.hint || q.hint_text || "" 
           };
         });
         setQuestions(formattedQuestions);
@@ -60,80 +148,99 @@ export default function ExamEngine() {
     loadExam();
   }, [batchId, modId, chapId, exerciseId, navigate]);
 
-  useEffect(() => { if (session.currentQ) session.initQuestionState(session.currentQ.id); }, [session.currentIndex, session.currentQ, session.initQuestionState]);
+  useEffect(() => { 
+    if (session.currentQ) {
+      session.initQuestionState(session.currentQ.id); 
+      setTimeSpent(timeSpentRef.current[session.currentQ.id] || 0);
+      setIsTimerRunning(settings.autoStartTimer);
+    }
+  }, [session.currentIndex, session.currentQ, session.initQuestionState, settings.autoStartTimer]);
 
   useEffect(() => {
     let timer;
-    if (examState === 'active' && settings.autoStartTimer) {
-      timer = setInterval(() => { setTimeSpent(p => p + 1); setTotalTimeSpent(p => p + 1); }, 1000);
+    const isFinished = session.currentState?.status === 'completed';
+    if (examState === 'active' && isTimerRunning && !isFinished) {
+      timer = setInterval(() => { 
+        setTimeSpent(p => {
+          const newTime = p + 1;
+          if (session.currentQ) timeSpentRef.current[session.currentQ.id] = newTime;
+          return newTime;
+        }); 
+        setTotalTimeSpent(p => p + 1); 
+      }, 1000);
     }
     return () => clearInterval(timer);
-  }, [session.currentIndex, examState, settings.autoStartTimer]);
+  }, [session.currentIndex, session.currentState?.status, examState, isTimerRunning, session.currentQ]);
 
-  // 🚨 THE ATTEMPT BUILDER (Constructs exact required schema per attempt)
-  const handleCheck = () => {
-    const q = session.currentQ;
-    const state = session.currentState;
-    if (!q || !state || state.selectedOptions.length === 0) return;
-
-    const isCorrect = q.type === 'single_choice' 
-      ? state.selectedOptions[0] === q.correctOptions[0] 
-      : JSON.stringify([...state.selectedOptions].sort()) === JSON.stringify([...q.correctOptions].sort());
-
-    const attemptNumber = state.attempts.length + 1;
-    const isFirstAttempt = attemptNumber === 1;
-    const pointsEarned = isCorrect ? (isFirstAttempt ? (q.points || 1) : ((q.points || 1) / 2)) : 0;
-    
-    if (isCorrect) session.setScore(prev => prev + pointsEarned);
-    
-    const attemptTelemetry = telemetry.extractAndResetForNextAttempt();
-    const timeExceeded = timeSpent > (q.idealTimeSeconds || 60);
-
-    const attemptPayload = {
-      attemptNumber,
-      userId: auth.currentUser?.uid,
-      responseTime: new Date(), 
-      isCorrect,
-      attempts: {
-        firstAttemptCorrect: attemptNumber === 1 ? isCorrect : state.attempts[0].isCorrect,
-        secondAttemptCorrect: attemptNumber === 2 ? isCorrect : false
-      },
-      timeSpentInSeconds: timeSpent,
-      hintViewed: state.hintViewed,
-      pointsEarned,
-      correctOptions: q.correctOptions,
-      selectedOptions: [...state.selectedOptions],
-      questionId: q.id,
-      responseId: `res_${Date.now()}`,
-      difficulty: q.difficulty || 'mid',
-      topic: q.topic || 'Uncategorized',
-      subTopic: q.subTopic || 'Uncategorized',
-      wasSkippedInitially: state.wasSkippedInitially,
-      revisited: state.revisited,
-      exceededExpectedTime: timeExceeded,
-      exceededExpectedTimeBy: timeExceeded ? timeSpent - (q.idealTimeSeconds || 60) : 0,
-      ...attemptTelemetry // Spreads optionSelectionTimeline, hoverTime, timePerOption, focusLostCount, etc.
-    };
-
-    session.setQuestionStates(prev => ({
-      ...prev,
-      [q.id]: {
-        ...state,
-        status: isCorrect ? 'completed' : (isFirstAttempt && q.secondAttempt ? 'attempt1_failed' : 'completed'),
-        attempts: [...state.attempts, attemptPayload]
-      }
-    }));
-    
-    setTimeSpent(0); // Reset timer for Attempt 2
+  const handleInteraction = () => {
+    if (!isTimerRunning && examState === 'active') {
+      setIsTimerRunning(true);
+    }
   };
 
-  const handleNext = () => {
-    if (session.currentState.status === 'idle') session.skipQuestion(session.currentQ.id);
-    if (session.currentIndex < questions.length - 1) {
-      session.setCurrentIndex(p => p + 1);
-      setTimeSpent(0);
+  const handleToggleOptionWrapper = (optionId, isMulti) => {
+    handleInteraction();
+    session.toggleOption(optionId, isMulti);
+  };
+
+  const handleCheck = (manualValue = null) => {
+    handleInteraction(); 
+    const { currentQ, currentState, setQuestionStates, setScore } = session;
+    
+    if (!currentState || currentState.status === 'completed') return;
+
+    const correctOption = currentQ.options.find(o => o.isCorrect);
+    const isCorrect = manualValue 
+      ? manualValue === correctOption?.text 
+      : currentState.selectedOptions.includes(correctOption?.text);
+
+    if (isCorrect) {
+      if (settings.playSounds) playAudioFeedback(true);
+      setQuestionStates(prev => ({
+        ...prev,
+        [currentQ.id]: { ...prev[currentQ.id], status: 'completed', isCorrect: true }
+      }));
+      setScore(s => s + currentQ.points);
+    } else if (currentQ.secondAttempt && currentState.status !== 'attempt1_failed') {
+      if (settings.playSounds) playAudioFeedback(false);
+      setQuestionStates(prev => ({
+        ...prev,
+        [currentQ.id]: { ...prev[currentQ.id], status: 'attempt1_failed' }
+      }));
     } else {
-      finishExam();
+      if (settings.playSounds) playAudioFeedback(false);
+      setQuestionStates(prev => ({
+        ...prev,
+        [currentQ.id]: { ...prev[currentQ.id], status: 'completed', isCorrect: false }
+      }));
+    }
+  };
+
+  const handleNext = async () => {
+    if (!session.currentState) return;
+    setIsNextLoading(true);
+
+    try {
+      if (session.currentState?.status === 'completed' && !session.currentState?.studentDifficulty) {
+        setShowRatingPrompt(true);
+        setIsNextLoading(false); 
+        return;
+      }
+
+      if (session.currentState?.status === 'idle') {
+        await session.skipQuestion(session.currentQ.id);
+      }
+
+      if (session.currentIndex < questions.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        session.setCurrentIndex(p => p + 1);
+      } else {
+        setShowFinishModal(true); 
+      }
+    } catch (error) {
+      console.error("Navigation failed:", error);
+    } finally {
+      setIsNextLoading(false);
     }
   };
 
@@ -142,101 +249,314 @@ export default function ExamEngine() {
     if (session.currentIndex > 0) {
       session.setCurrentIndex(p => p - 1);
       session.setQuestionStates(prev => ({ ...prev, [session.currentQ.id]: { ...prev[session.currentQ.id], revisited: true } }));
-      setTimeSpent(0);
     }
   };
 
-  // 🚨 THE DATABASE PUSHER (Writes to precise nested collections)
-  const finishExam = async () => {
-  setExamState('results');
-  const userId = auth.currentUser?.uid;
-  if (!userId) return;
+  const finishExam = async (forceSubmit = false) => {
+    if (!forceSubmit && examState === 'active' && session.currentState?.status === 'completed' && !session.currentState?.studentDifficulty) {
+      setShowRatingPrompt(true);
+      return;
+    }
 
-  try {
-    const batch = writeBatch(db);
-    
-    // 1. Progress (Even: 4 segments)
-    const progressRef = doc(db, 'batches', batchId, 'user_progress', userId);
-    batch.set(progressRef, { 
-      examResults: { 
-        [exerciseId]: { score: session.score, total: questions.length, timeSpent: totalTimeSpent, completedAt: serverTimestamp() }
-      }
-    }, { merge: true });
+    setExamState('results');
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
 
-    // 2. Exercise Metadata (Even: 4 segments)
-    // Path: engine_logs (coll) / exercises (doc) / {exerciseId} (coll) / metadata (doc)
-    // 🚨 BETTER PATH: engine_logs (coll) / {exerciseId} (doc)
-    const exerciseDocRef = doc(db, 'engine_logs', exerciseId);
-    batch.set(exerciseDocRef, { 
-      exerciseId, 
-      name: examConfig.title, 
-      batch: batchId, 
-      lastAttemptBy: userId,
-      recordedAt: serverTimestamp() 
-    }, { merge: true });
-
-    // 3. Questions and Attempts
-    Object.values(session.questionStates).forEach((qState) => {
-      if (qState.attempts.length === 0) return;
+    try {
+      const batch = writeBatch(db);
       
-      const qId = qState.attempts[0].questionId;
-
-      // 🚨 FIXING THE PATH HERE:
-      // Path: engine_logs (1) / {exerciseId} (2) / questions (3) / {qId} (4) 
-      const questionDocRef = doc(db, 'engine_logs', exerciseId, 'questions', qId);
-      
-      batch.set(questionDocRef, { 
-        questionId: qId, 
-        lastUpdated: serverTimestamp() 
+      const progressRef = doc(db, 'batches', batchId, 'user_progress', userId);
+      batch.set(progressRef, { 
+        examResults: { 
+          [exerciseId]: { score: session.score, total: questions.length, timeSpent: totalTimeSpent, completedAt: serverTimestamp() }
+        }
       }, { merge: true });
 
-      qState.attempts.forEach((attempt) => {
-        const finalAttemptData = { 
-          ...attempt, 
-          studentDifficulty: qState.studentDifficulty || 'unrated',
-          responseTime: serverTimestamp() 
-        };
+      const exerciseDocRef = doc(db, 'engine_logs', exerciseId);
+      batch.set(exerciseDocRef, { exerciseId, name: examConfig.title, batch: batchId, lastAttemptBy: userId, totalViolations: violationCount, recordedAt: serverTimestamp() }, { merge: true });
+
+      questions.forEach((q) => {
+        const qState = session.questionStates[q.id];
+        const questionDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id);
         
-        // 🚨 Path: engine_logs (1) / {exerciseId} (2) / questions (3) / {qId} (4) / attempts (5) / {responseId} (6)
-        const attemptDocRef = doc(db, 'engine_logs', exerciseId, 'questions', qId, 'attempts', attempt.responseId);
-        batch.set(attemptDocRef, finalAttemptData);
+        if (!qState || qState.attempts.length === 0) {
+          batch.set(questionDocRef, { questionId: q.id, status: 'skipped_or_unattempted', topic: q.topic || 'Uncategorized', lastUpdated: serverTimestamp() }, { merge: true });
+          return;
+        }
+
+        batch.set(questionDocRef, { questionId: q.id, lastUpdated: serverTimestamp() }, { merge: true });
+
+        qState.attempts.forEach((attempt) => {
+          const finalAttemptData = { ...attempt, studentDifficulty: qState.studentDifficulty || 'unrated', userNote: qState.userNote || "", responseTime: serverTimestamp() };
+          const attemptDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id, 'attempts', attempt.responseId);
+          batch.set(attemptDocRef, finalAttemptData);
+        });
       });
-    });
 
-    await batch.commit();
-    console.log("✅ Deep Logs Saved Successfully");
+      await batch.commit();
+      console.log("✅ Deep Logs Saved Successfully");
 
-  } catch (err) {
-    console.error("❌ Failed to save deep analytics:", err);
-  }
+    } catch (err) {
+      console.error("❌ Failed to save deep analytics:", err);
+    }
+  };
+
+  const handleSaveUserNote = (noteText) => {
+  session.setQuestionStates(prev => ({
+    ...prev,
+    [session.currentQ.id]: {
+      ...prev[session.currentQ.id],
+      userNote: noteText // 🚨 This saves it to local React state
+    }
+  }));
 };
 
   if (examState === 'loading') return <div className="h-screen w-full flex items-center justify-center"><p>Loading Engine...</p></div>;
   if (examState === 'intro') return <ExamIntro examConfig={examConfig} totalQuestions={questions.length} onStart={() => setExamState('active')} isDarkMode={isDarkMode} />;
+  
+  if (fatalViolation && examState === 'results') {
+    return (
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? 'bg-[#0B1121]' : 'bg-slate-50'}`}>
+        <div className={`max-w-md w-full p-8 rounded-3xl text-center border shadow-2xl ${isDarkMode ? 'bg-[#151E2E] border-rose-900/50' : 'bg-white border-rose-200'}`}>
+          <AlertTriangle size={48} className="mx-auto text-rose-500 mb-6" />
+          <h2 className={`text-2xl font-black mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Exam Terminated</h2>
+          <p className={`mb-8 font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            You exceeded the maximum allowed proctoring violations (10/10). Your session has been locked and automatically submitted.
+          </p>
+          <button onClick={() => setFatalViolation(false)} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl active:scale-95 transition-transform">
+            View Final Results
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (examState === 'results') return <ExamResults score={session.score} totalQuestions={questions.length} examConfig={examConfig} totalTimeSpent={totalTimeSpent} isDarkMode={isDarkMode} onDashboard={() => navigate('/student-dashboard')} />;
 
-  const fontClasses = { small: 'text-base', medium: 'text-xl', large: 'text-3xl' }[settings.textSize];
+  const fontClasses = { small: 'text-base', medium: 'text-xl', large: 'text-3xl', xlarge: 'text-4xl' }[settings.textSize] || 'text-xl';
   const timerIsCritical = timeSpent > (session.currentQ?.idealTimeSeconds || 60);
 
   return (
-    <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden transition-colors duration-500 ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
-      <ExamHeader examConfig={examConfig} currentQ={session.currentQ} currentIndex={session.currentIndex} totalQuestions={questions.length} timeSpent={timeSpent} timerIsCritical={timerIsCritical} isDarkMode={isDarkMode} toggleTheme={toggleTheme} onOpenSettings={() => setIsSettingsOpen(true)} onExit={() => navigate('/student-dashboard')} />
+    <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden transition-colors duration-500 relative ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+
+      {/* 🚨 NEW: Personal Notes Dialog */}
+      <AnimatePresence>
+        {isNotesOpen && (
+          <div className="absolute inset-0 z-[150] flex items-center justify-center px-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsNotesOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className={`relative w-full max-w-lg p-6 rounded-[2rem] border shadow-2xl ${
+                isDarkMode ? 'bg-[#151E2E] border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl">
+                    <StickyNote size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-lg">Personal Notes</h3>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Stored for this question</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsNotesOpen(false)} className="p-2 hover:bg-slate-500/10 rounded-xl transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <textarea
+                autoFocus
+                value={session.currentState?.userNote || ''}
+                onChange={(e) => handleSaveUserNote(e.target.value)}
+                placeholder="Type your mnemonics, grammar rules, or reminders here... Refreshing the browser without submitting text will delete this note."
+                className={`w-full min-h-[200px] p-5 rounded-2xl border-2 outline-none transition-all text-sm leading-relaxed resize-none ${
+                  isDarkMode 
+                    ? 'bg-[#0B1121] border-slate-700 focus:border-indigo-500 text-slate-200' 
+                    : 'bg-slate-50 border-slate-200 focus:border-indigo-400 text-slate-800'
+                }`}
+              />
+
+              <div className="mt-6 flex justify-end">
+                <button 
+                  onClick={() => setIsNotesOpen(false)}
+                  className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20"
+                >
+                  Save & Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showHintModal && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className={`max-w-md w-full p-6 sm:p-8 rounded-3xl shadow-2xl border transition-all ${isDarkMode ? 'bg-[#2A2416] border-amber-900/50 shadow-amber-900/20' : 'bg-[#FFFBEB] border-amber-200 shadow-amber-500/10'}`}
+            >
+              <div className={`flex items-center gap-3 mb-4 font-black text-lg ${isDarkMode ? 'text-amber-500' : 'text-amber-600'}`}>
+                <Lightbulb size={24} /> Question Hint
+              </div>
+              <p className={`text-base font-medium leading-relaxed mb-8 ${isDarkMode ? 'text-amber-100/80' : 'text-amber-900/80'}`}>
+                {session.currentQ?.hint}
+              </p>
+              <button 
+                onClick={() => setShowHintModal(false)}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-amber-200 text-amber-700 hover:bg-amber-300'}`}
+              >
+                Close Hint
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showFinishModal && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`max-w-md w-full p-8 rounded-3xl shadow-2xl border text-center ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}
+            >
+              <CheckCircle2 size={48} className="mx-auto text-emerald-500 mb-6" />
+              <h3 className={`text-2xl font-black mb-2 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>Finish Assessment?</h3>
+              <p className="text-sm font-medium mb-8 text-slate-500">You've reached the end. Once you submit, you can't change your answers.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setShowFinishModal(false)} className="flex-1 py-4 rounded-xl bg-slate-100 font-bold text-slate-600">Back</button>
+                <button onClick={() => finishExam()} className="flex-1 py-4 bg-indigo-600 text-white font-bold rounded-xl active:scale-95">Submit Now</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      
+      <AnimatePresence>
+        {showRatingPrompt && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className={`max-w-sm w-full p-6 rounded-3xl shadow-2xl border text-center ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}
+            >
+              <Info size={36} className="mx-auto text-indigo-500 mb-4" />
+              <h3 className={`text-xl font-black mb-2 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>Rating Required</h3>
+              <p className={`text-sm font-medium mb-6 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Please rate the difficulty of this question before moving forward.
+              </p>
+              <button 
+                onClick={() => setShowRatingPrompt(false)}
+                className="w-full py-3.5 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-transform"
+              >
+                Okay, I'll rate it
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {proctorWarning && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className={`max-w-md w-full p-6 rounded-3xl shadow-2xl border ${isDarkMode ? 'bg-[#151E2E] border-rose-900/50 shadow-rose-900/20' : 'bg-white border-rose-200 shadow-rose-900/10'}`}
+            >
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mb-4">
+                  <AlertTriangle size={32} />
+                </div>
+                <h3 className={`text-xl font-black mb-2 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+                  Proctoring Warning
+                </h3>
+                <p className={`text-sm font-medium leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  We detected a <span className="font-bold text-rose-500">{proctorWarning.type === 'tab_switch' ? 'Tab Switch' : 'Window Focus Loss'}</span>. You are required to stay on the exam screen.
+                </p>
+                <div className="mt-4 px-4 py-2 bg-rose-500/10 rounded-lg border border-rose-500/20">
+                  <span className="text-rose-500 font-bold">Strike {proctorWarning.count} of 10</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-3 font-medium">
+                  If you reach 10 strikes, your exam will be automatically submitted.
+                </p>
+              </div>
+              
+              <button 
+                onClick={() => setProctorWarning(null)}
+                className="w-full py-3.5 rounded-xl font-bold text-sm bg-rose-600 text-white hover:bg-rose-500 shadow-lg shadow-rose-600/20 transition-all active:scale-95"
+              >
+                I Understand, Continue Exam
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🚨 UPGRADE: Passed onOpenNotes and hasAttempted to ExamHeader */}
+      <ExamHeader 
+        examConfig={examConfig} 
+        currentQ={session.currentQ} 
+        currentIndex={session.currentIndex} 
+        totalQuestions={questions.length} 
+        timeSpent={timeSpent} 
+        timerIsCritical={timerIsCritical} 
+        isDarkMode={isDarkMode} 
+        toggleTheme={toggleTheme} 
+        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onExit={() => finishExam()} 
+        isTimerRunning={isTimerRunning}
+        onStartTimer={() => setIsTimerRunning(true)}
+        onOpenNotes={() => setIsNotesOpen(true)}
+        hasAttempted={settings.showMyNote && (session.currentState?.status !== 'idle' || !!session.currentState?.userNote)}
+      />
       
       <main className="flex-1 overflow-y-auto p-4 lg:p-10 flex flex-col items-center">
         <div className="w-full max-w-4xl space-y-8 pb-10">
-          <QuestionDisplay currentQ={session.currentQ} fontClasses={fontClasses} isDarkMode={isDarkMode} />
+          <QuestionDisplay currentQ={session.currentQ} currentIndex={session.currentIndex} totalQuestions={questions.length} fontClasses={fontClasses} isDarkMode={isDarkMode} />
           
           {session.currentQ?.type.includes('choice') ? (
-            <ChoiceInterface currentQ={session.currentQ} currentState={session.currentState} settings={settings} telemetry={telemetry} toggleOption={session.toggleOption} isDarkMode={isDarkMode} fontClasses={fontClasses} />
+            <ChoiceInterface currentQ={session.currentQ} currentState={session.currentState} settings={settings} telemetry={telemetry} toggleOption={handleToggleOptionWrapper} isDarkMode={isDarkMode} fontClasses={fontClasses} />
+          ) : session.currentQ?.type === 'kanji_draw' ? (
+            <KanjiInterface currentQ={session.currentQ} toggleOption={handleToggleOptionWrapper} isDarkMode={isDarkMode} currentState={session.currentState} onCheck={handleCheck} />
           ) : (
-            <TextInterface currentQ={session.currentQ} telemetry={telemetry} currentState={session.currentState} toggleOption={session.toggleOption} isDarkMode={isDarkMode} fontClasses={fontClasses} />
+            <TextInterface currentQ={session.currentQ} telemetry={telemetry} currentState={session.currentState} toggleOption={handleToggleOptionWrapper} isDarkMode={isDarkMode} fontClasses={fontClasses} />
           )}
 
           <PostAttemptFeedback currentQ={session.currentQ} currentState={session.currentState} settings={settings} markHintViewed={session.markHintViewed} setStudentDifficulty={session.setStudentDifficulty} isDarkMode={isDarkMode} />
+
         </div>
       </main>
 
-      <ExamFooter currentIndex={session.currentIndex} onClear={() => session.clearSelection(session.currentQ.id)} totalQuestions={questions.length} currentState={session.currentState} onPrevious={handlePrevious} onCheck={handleCheck} onNext={handleNext} isDarkMode={isDarkMode} />
+      <ExamFooter 
+        currentIndex={session.currentIndex} 
+        onClear={() => session.clearSelection(session.currentQ.id)} 
+        totalQuestions={questions.length} 
+        currentState={session.currentState} 
+        onPrevious={handlePrevious} 
+        onCheck={handleCheck} 
+        onNext={handleNext} 
+        isNextLoading={isNextLoading}
+        isDarkMode={isDarkMode} 
+        hasHint={settings.showHint && !!session.currentQ?.hint}
+        onShowHint={() => {
+          setShowHintModal(true);
+          session.markHintViewed(session.currentQ.id); 
+        }}
+      />
       <SettingsDrawer isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} setSettings={setSettings} isDarkMode={isDarkMode} />
     </div>
   );

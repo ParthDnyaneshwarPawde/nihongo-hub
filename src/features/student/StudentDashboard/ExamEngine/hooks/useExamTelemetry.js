@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export function useExamTelemetry(currentQuestionId) {
+export function useExamTelemetry(currentQuestionId, onViolation, isActive = false) {
   const [telemetry, setTelemetry] = useState(getInitialTelemetry());
   
   const questionStartTime = useRef(Date.now());
   const hoverStartTimes = useRef({});
+  
+  // 🚨 UPGRADE: Persistent global counters for the entire exam session
+  const sessionViolations = useRef({ tabSwitches: 0, focusLosses: 0 });
 
   function getInitialTelemetry() {
     return {
@@ -20,20 +23,40 @@ export function useExamTelemetry(currentQuestionId) {
     };
   }
 
-  // Reset entirely on new question
   useEffect(() => {
     setTelemetry(getInitialTelemetry());
     questionStartTime.current = Date.now();
     hoverStartTimes.current = {};
   }, [currentQuestionId]);
 
-  // Proctoring listeners
+  // 🚨 UPGRADE: Only attach listeners and track violations if the exam is ACTIVE
   useEffect(() => {
+    if (!isActive) return;
+
     const handleVisibilityChange = () => {
-      if (document.hidden) setTelemetry(prev => ({ ...prev, tabSwitchedCount: prev.tabSwitchedCount + 1 }));
+      if (document.hidden) {
+        // Increment both the local question telemetry and the global session tracker
+        sessionViolations.current.tabSwitches += 1;
+        const currentTotal = sessionViolations.current.tabSwitches;
+
+        setTelemetry(prev => ({ ...prev, tabSwitchedCount: prev.tabSwitchedCount + 1 }));
+        
+        // Pass the violation type and the exact global count to the Engine
+        if (onViolation) {
+          onViolation('tab_switch', currentTotal);
+        }
+      }
     };
+
     const handleBlur = () => {
+      sessionViolations.current.focusLosses += 1;
+      const currentTotal = sessionViolations.current.focusLosses;
+
       setTelemetry(prev => ({ ...prev, focusLostCount: prev.focusLostCount + 1 }));
+      
+      if (onViolation) {
+        onViolation('focus_lost', currentTotal);
+      }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -42,7 +65,7 @@ export function useExamTelemetry(currentQuestionId) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [onViolation, isActive]);
 
   const recordOptionClick = useCallback((optionId, optionLabel) => {
     const now = Date.now();
@@ -81,7 +104,6 @@ export function useExamTelemetry(currentQuestionId) {
     }
   }, []);
 
-  // 🚨 Extracts current data for the attempt payload and resets counters for Attempt 2
   const extractAndResetForNextAttempt = useCallback(() => {
     const currentData = { ...telemetry };
     setTelemetry(getInitialTelemetry());
@@ -89,11 +111,5 @@ export function useExamTelemetry(currentQuestionId) {
     return currentData;
   }, [telemetry]);
 
-  return {
-    telemetry,
-    recordOptionClick,
-    handleMouseEnter,
-    handleMouseLeave,
-    extractAndResetForNextAttempt
-  };
+  return { telemetry, recordOptionClick, handleMouseEnter, handleMouseLeave, extractAndResetForNextAttempt };
 }

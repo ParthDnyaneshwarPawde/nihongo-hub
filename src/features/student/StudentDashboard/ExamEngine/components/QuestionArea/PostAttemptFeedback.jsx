@@ -1,18 +1,31 @@
-import React from 'react';
-import { AlertCircle, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertCircle, HelpCircle, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function PostAttemptFeedback({ currentQ, currentState, settings, markHintViewed, setStudentDifficulty, isDarkMode }) {
+  // 🚨 UPGRADE: Safe fallback for the settings prop
+  const solutionMode = settings?.solutionMode ?? false;
+  
+  // 🚨 UPGRADE: Local state to handle the accordion toggle
+  const [isExpanded, setIsExpanded] = useState(solutionMode);
+
+  // Keep the accordion state in sync if the user toggles the setting or changes questions
+  useEffect(() => {
+    setIsExpanded(solutionMode);
+  }, [solutionMode, currentQ?.id]);
+
   if (!currentQ || !currentState) return null;
 
-  const showExplanation = (currentState.status === 'completed' || (currentState.status === 'attempt1_failed' && currentQ.secondAttempt)) || settings.solutionMode;
+  const isCompleted = currentState.status === 'completed';
+  const isFailedFirstTry = currentState.status === 'attempt1_failed';
   
-  if (!showExplanation) return null;
+  // Only show the feedback area if they've completely finished the question OR failed the first try
+  if (!isCompleted && !isFailedFirstTry) return null;
 
   return (
     <div className="space-y-4 animate-in slide-in-from-bottom-4 fade-in">
       
-      {/* HINT SYSTEM */}
-      {currentQ.hint && currentState.status === 'attempt1_failed' && !currentState.hintViewed && (
+      {/* HINT SYSTEM (Only shows during attempt 1 failed) */}
+      {currentQ.hint && isFailedFirstTry && !currentState.hintViewed && (
         <button onClick={() => markHintViewed(currentQ.id)} className="w-full p-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 font-bold text-sm hover:bg-cyan-500/20 transition-colors">
           View Teacher's Hint
         </button>
@@ -25,27 +38,58 @@ export default function PostAttemptFeedback({ currentQ, currentState, settings, 
         </div>
       )}
 
-      {/* OFFICIAL SOLUTION */}
-      <div className={`p-6 lg:p-8 border rounded-3xl ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
-        <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px] mb-4"><AlertCircle size={16} /> Official Solution</h4>
-        <p className={`leading-relaxed font-medium text-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{currentQ.explanation}</p>
-        
-        {/* STUDENT DIFFICULTY RATING */}
-        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
-          <p className="text-xs font-bold text-slate-500 mb-3">How difficult was this for you?</p>
-          <div className="flex gap-2">
-            {['easy', 'mid', 'hard', 'tough'].map(level => (
-              <button 
-                key={level} 
-                onClick={() => setStudentDifficulty(currentQ.id, level)}
-                className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ${currentState.studentDifficulty === level ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-transparent border-slate-300 dark:border-slate-600 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-              >
-                {level}
-              </button>
-            ))}
+      {/* POST-COMPLETION AREA (Official Solution + Rating) */}
+      {isCompleted && (
+        <div className={`border rounded-3xl overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
+          
+          {/* 🚨 UPGRADE: Collapsible Solution Logic */}
+          {!isExpanded ? (
+            <button 
+              onClick={() => setIsExpanded(true)}
+              className={`w-full p-6 flex items-center justify-between font-bold transition-colors ${isDarkMode ? 'text-indigo-400 hover:bg-slate-800/60' : 'text-indigo-600 hover:bg-indigo-50/50'}`}
+            >
+              <span className="flex items-center gap-2"><Eye size={18} /> View Official Solution & Explanation</span>
+              <ChevronDown size={20} />
+            </button>
+          ) : (
+            <div className="p-6 lg:p-8">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px]">
+                  <AlertCircle size={16} /> Official Solution
+                </h4>
+                {/* Allow them to collapse it again unless Solution Mode forces it open */}
+                {!solutionMode && (
+                  <button onClick={() => setIsExpanded(false)} className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-500 hover:bg-slate-700' : 'text-slate-400 hover:bg-slate-100'}`}>
+                    <ChevronUp size={16} />
+                  </button>
+                )}
+              </div>
+              
+              <p className={`leading-relaxed font-medium text-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                {currentQ.explanation}
+              </p>
+            </div>
+          )}
+
+          {/* STUDENT DIFFICULTY RATING */}
+          {/* 🚨 UPGRADE: Separated from the solution box so they can ALWAYS rate it, even if the solution is collapsed */}
+          <div className={`px-6 py-5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-100 bg-slate-50/50'}`}>
+            <p className="text-xs font-bold text-slate-500 mb-3">How difficult was this for you?</p>
+            <div className="flex gap-2">
+              {['easy', 'mid', 'hard', 'tough'].map(level => (
+                <button 
+                  key={level} 
+                  onClick={() => setStudentDifficulty(currentQ.id, level)}
+                  className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest border transition-all ${currentState.studentDifficulty === level ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-transparent border-slate-300 dark:border-slate-600 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
           </div>
+
         </div>
-      </div>
+      )}
     </div>
   );
 }

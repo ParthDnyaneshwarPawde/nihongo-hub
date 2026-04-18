@@ -17,13 +17,16 @@ export function useExamSession(questions) {
           studentDifficulty: null, 
           wasSkippedInitially: false,
           revisited: false,
-          attempts: [] 
+          attempts: [],
+          userNote: '' // 🚨 THE FIX: Initialize the note string so React tracks it immediately
         }
       };
     });
   }, []);
 
   const currentQ = questions[currentIndex];
+
+  // 🚨 YOUR REQUESTED FORMAT
   const currentState = currentQ ? questionStates[currentQ.id] : null;
 
   const toggleOption = (optionId, isMulti) => {
@@ -32,7 +35,12 @@ export function useExamSession(questions) {
     
     setQuestionStates(prev => {
       const state = prev[qId];
-      if (state.status !== 'idle') return prev; // 🚨 Security check: Prevent changes if already attempted
+      
+      // 🚨 BOUNCER: If the state doesn't exist yet, do nothing. 
+      // This prevents "Cannot read properties of undefined"
+      if (!state) return prev; 
+
+      if (state.status === 'completed') return prev; 
 
       let newSelection = [];
       
@@ -41,7 +49,6 @@ export function useExamSession(questions) {
           ? state.selectedOptions.filter(id => id !== optionId)
           : [...state.selectedOptions, optionId];
       } else {
-        // 🚨 REMOVED the "click to clear" logic for single choice. It now strictly selects.
         newSelection = [optionId];
       }
 
@@ -49,24 +56,54 @@ export function useExamSession(questions) {
     });
   };
 
-  // 🚨 NEW: Dedicated Clear Function
   const clearSelection = (qId) => {
     setQuestionStates(prev => {
       const state = prev[qId];
-      if (state.status !== 'idle') return prev; // Cannot clear if already attempted
-      return { ...prev, [qId]: { ...state, selectedOptions: [] } };
+      // 🚨 BOUNCER: Guard against null/undefined state
+      if (!state || state.status === 'completed') return prev; 
+      
+      // 🚨 THE FIX: Reset the interactive properties, but spread the ...state 
+      // first so the userNote and hintViewed status are perfectly preserved!
+      return { 
+        ...prev, 
+        [qId]: { 
+          ...state, 
+          status: 'idle', // Resets so they can try again
+          selectedOptions: [] // Clears the UI selection
+        } 
+      };
     });
   };
 
-  const markHintViewed = (qId) => setQuestionStates(prev => ({ ...prev, [qId]: { ...prev[qId], hintViewed: true } }));
-  const setStudentDifficulty = (qId, diff) => setQuestionStates(prev => ({ ...prev, [qId]: { ...prev[qId], studentDifficulty: diff } }));
-  const skipQuestion = (qId) => setQuestionStates(prev => ({ ...prev, [qId]: { ...prev[qId], status: 'skipped', wasSkippedInitially: prev[qId].status === 'idle' ? true : prev[qId].wasSkippedInitially } }));
+  // 🚨 BOUNCER: Using Optional Chaining and Fallbacks for safe updates
+  const markHintViewed = (qId) => setQuestionStates(prev => {
+    if (!prev[qId]) return prev;
+    return { ...prev, [qId]: { ...prev[qId], hintViewed: true } };
+  });
+
+  const setStudentDifficulty = (qId, diff) => setQuestionStates(prev => {
+    if (!prev[qId]) return prev;
+    return { ...prev, [qId]: { ...prev[qId], studentDifficulty: diff } };
+  });
+
+  const skipQuestion = (qId) => setQuestionStates(prev => {
+    const state = prev[qId];
+    if (!state) return prev;
+    return { 
+      ...prev, 
+      [qId]: { 
+        ...state, 
+        status: 'skipped', 
+        wasSkippedInitially: state.status === 'idle' ? true : state.wasSkippedInitially 
+      } 
+    };
+  });
 
   return {
     currentIndex, setCurrentIndex,
     score, setScore,
     questionStates, setQuestionStates,
-    initQuestionState, toggleOption, clearSelection, // 🚨 Exported new function
+    initQuestionState, toggleOption, clearSelection, 
     markHintViewed, setStudentDifficulty, skipQuestion,
     currentQ, currentState
   };
