@@ -1,3 +1,1464 @@
  refactor exam engine into different files and make it work for all question type and make it save into 
 
  analytics -> exercises -> questions -> attempt -> then document with 
+
+
+ import React, { useState, useEffect } from 'react';
+
+import { 
+
+  X, Settings as SettingsIcon, Bookmark, Clock, Volume2, 
+
+  ChevronRight, ChevronLeft, CheckCircle2, PlayCircle, AlertCircle,
+
+  Moon, Sun, Loader2, Trophy, Target, RefreshCcw
+
+} from 'lucide-react';
+
+import { useNavigate, useParams } from 'react-router-dom';
+
+import { motion, AnimatePresence } from 'framer-motion';
+
+
+
+// 🚨 FIREBASE IMPORTS UPDATED
+
+import { db, auth } from '@services/firebase'; 
+
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+
+
+
+// 🚨 GLOBAL THEME IMPORT
+
+import { useTheme } from '@/context/ThemeContext'; 
+
+
+
+export default function ExamEngine() {
+
+  const navigate = useNavigate();
+
+  const { batchId, modId, chapId, exerciseId } = useParams();
+
+
+
+  const { isDarkMode, toggleTheme } = useTheme();
+
+  
+
+  const [examState, setExamState] = useState('loading'); 
+
+  const [examConfig, setExamConfig] = useState(null);
+
+  const [questions, setQuestions] = useState([]);
+
+  
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const [timeSpent, setTimeSpent] = useState(0); 
+
+  const [totalTimeSpent, setTotalTimeSpent] = useState(0); 
+
+  const [score, setScore] = useState(0); 
+
+  
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [settings, setSettings] = useState({
+
+    alwaysShowNote: true,
+
+    solutionMode: false,
+
+    autoStartTimer: true,
+
+    playSounds: true,
+
+    delayCorrectDisplay: false,
+
+    textSize: 'medium', 
+
+    showPeerStats: true
+
+  });
+
+  
+
+  const [selectedOpt, setSelectedOpt] = useState(null);
+
+  const [checkStatus, setCheckStatus] = useState("idle"); 
+
+  const [attempts, setAttempts] = useState(0);
+
+  const [showExplanation, setShowExplanation] = useState(false);
+
+
+
+  // ----------------------------------------------------
+
+  // 📥 FETCH EXAM DATA & INITIAL PEER STATS
+
+  // ----------------------------------------------------
+
+  // ----------------------------------------------------
+
+  // 📥 FETCH EXAM DATA & GLOBAL PEER STATS
+
+  // ----------------------------------------------------
+
+  useEffect(() => {
+
+    const loadExam = async () => {
+
+      try {
+
+        // 1. Fetch the lightweight exercise document
+
+        const exerciseRef = doc(db, 'batches', batchId, 'module', modId, 'chapters', chapId, 'exercises', exerciseId);
+
+        const exerciseSnap = await getDoc(exerciseRef);
+
+
+
+        if (exerciseSnap.exists()) {
+
+          const data = exerciseSnap.data();
+
+          setExamConfig({
+
+            title: data.title,
+
+            description: data.description,
+
+            passPercentage: data.passPercentage || 80,
+
+            duration: data.duration,
+
+          });
+
+
+
+          // 2. Extract the array of Question IDs
+
+          const qIds = data.questionIds || [];
+
+
+
+          if (qIds.length === 0) {
+
+            setQuestions([]);
+
+            setExamState('intro');
+
+            return;
+
+          }
+
+
+
+          // 3. 🚨 NEW: Fetch the heavy question data directly from the Question Bank!
+
+          const questionPromises = qIds.map(id => 
+
+            getDoc(doc(db, `question_bank/${batchId}/questions`, id))
+
+          );
+
+          const questionSnaps = await Promise.all(questionPromises);
+
+
+
+          // 4. Format the fetched questions for the UI
+
+          const formattedQuestions = questionSnaps
+
+            .filter(snap => snap.exists()) // Ignore any broken IDs
+
+            .map(snap => {
+
+              const q = snap.data();
+
+              const correctOpt = q.options?.find(o => o.isCorrect);
+
+              
+
+              // Calculate real-time global peer stats
+
+              const totalVotes = q.options?.reduce((sum, opt) => sum + (opt.count || 0), 0) || 0;
+
+              
+
+              const optionsWithStats = (q.options || []).map(o => {
+
+                const optCount = o.count || 0;
+
+                const peerStat = totalVotes > 0 ? Math.round((optCount / totalVotes) * 100) : 0;
+
+                return { 
+
+                  ...o, 
+
+                  peerStat: peerStat,
+
+                  count: optCount 
+
+                };
+
+              });
+
+
+
+              return {
+
+                id: q.id,
+
+                type: q.type?.replace('_', ' ').toUpperCase() || 'UNKNOWN',
+
+                prompt: q.promptText || '',
+
+                sentence: null, 
+
+                highlightedWord: null, 
+
+                mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
+
+                mediaUrl: q.mediaUrl || '',
+
+                options: optionsWithStats,
+
+                correctOptionId: correctOpt ? correctOpt.id : null,
+
+                idealTimeSeconds: q.idealTimeSeconds || 60,
+
+                explanation: q.officialSolution?.text || "No explanation provided."
+
+              };
+
+            });
+
+
+
+          setQuestions(formattedQuestions);
+
+          setExamState('intro');
+
+        } else {
+
+          alert("Exam not found!");
+
+          navigate(-1);
+
+        }
+
+      } catch (error) {
+
+        console.error("Error fetching exam from bank:", error);
+
+      }
+
+    };
+
+
+
+    loadExam();
+
+  }, [batchId, modId, chapId, exerciseId, navigate]);
+
+  
+
+  // ⏱️ STOPWATCH TIMER
+
+  useEffect(() => {
+
+    let timer;
+
+    if (examState === 'active' && settings.autoStartTimer) {
+
+      timer = setInterval(() => {
+
+        setTimeSpent(prev => prev + 1);
+
+        setTotalTimeSpent(prev => prev + 1);
+
+      }, 1000);
+
+    }
+
+    return () => clearInterval(timer);
+
+  }, [currentIndex, examState, settings.autoStartTimer]);
+
+
+
+  const formatTime = (seconds) => {
+
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+
+    const s = (seconds % 60).toString().padStart(2, '0');
+
+    return `${m}:${s}`;
+
+  };
+
+
+
+  const playSound = (type) => {
+
+    if (!settings.playSounds) return;
+
+    console.log(`🔊 Playing sound: ${type === 'correct' ? 'TADAN! ✨' : 'UH-OH ❌'}`);
+
+  };
+
+
+
+  const triggerVibration = () => {
+
+    if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]); 
+
+  };
+
+
+
+  // ----------------------------------------------------
+
+  // 🧠 ANSWER LOGIC & GLOBAL STAT UPDATE
+
+  // ----------------------------------------------------
+
+  const currentQ = questions[currentIndex];
+
+
+
+  const handleCheck = async () => {
+
+    if (!selectedOpt) return;
+
+
+
+    const isCorrect = selectedOpt === currentQ.correctOptionId;
+
+    
+
+    // 🚨 FIREBASE UPDATE: Only increment on FIRST attempt
+
+    if (attempts === 0) {
+
+      if (isCorrect) setScore(prev => prev + 1);
+
+
+
+      try {
+
+        // 1. Find the index of the selected option in the original array
+
+        const selectedOptIndex = currentQ.options.findIndex(o => o.id === selectedOpt);
+
+        
+
+        if (selectedOptIndex !== -1) {
+
+          // 2. Update the specific option's count in the Question Bank
+
+          const questionRef = doc(db, `question_bank/${batchId}/questions`, currentQ.id);
+
+          
+
+          // Using dot notation to update a specific element in the array
+
+          await updateDoc(questionRef, {
+
+            [`options.${selectedOptIndex}.count`]: increment(1)
+
+          });
+
+
+
+          // 3. Update Local State immediately so the UI reflects the new vote
+
+          setQuestions(prevQuestions => prevQuestions.map(q => {
+
+            if (q.id === currentQ.id) {
+
+              const newTotalVotes = q.options.reduce((sum, o) => sum + (o.count || 0), 0) + 1;
+
+              const updatedOptions = q.options.map(o => {
+
+                const newCount = (o.count || 0) + (o.id === selectedOpt ? 1 : 0);
+
+                return {
+
+                  ...o,
+
+                  count: newCount,
+
+                  peerStat: Math.round((newCount / newTotalVotes) * 100)
+
+                };
+
+              });
+
+              return { ...q, options: updatedOptions };
+
+            }
+
+            return q;
+
+          }));
+
+        }
+
+      } catch (err) {
+
+        console.error("Failed to update global peer stats:", err);
+
+      }
+
+    }
+
+
+
+    setAttempts(prev => prev + 1);
+
+
+
+    if (isCorrect) {
+
+      setCheckStatus("correct");
+
+      playSound("correct");
+
+      if (settings.solutionMode) setShowExplanation(true);
+
+    } else {
+
+      setCheckStatus("incorrect");
+
+      playSound("incorrect");
+
+      triggerVibration();
+
+      if (attempts >= 0 || settings.solutionMode) {
+
+        setShowExplanation(true); 
+
+      }
+
+    }
+
+  };
+
+
+
+  const handleNext = () => {
+
+    if (currentIndex < questions.length - 1) {
+
+      setCurrentIndex(prev => prev + 1);
+
+      resetQuestionState();
+
+    } else {
+
+      finishExam();
+
+    }
+
+  };
+
+
+
+  const handlePrevious = () => {
+
+    if (currentIndex > 0) {
+
+      setCurrentIndex(prev => prev - 1);
+
+      resetQuestionState();
+
+    }
+
+  };
+
+
+
+  const resetQuestionState = () => {
+
+    setSelectedOpt(null);
+
+    setCheckStatus("idle");
+
+    setAttempts(0);
+
+    setShowExplanation(false);
+
+    setTimeSpent(0); 
+
+  };
+
+
+
+  // 🏆 FINISH EXAM LOGIC
+
+  const finishExam = async () => {
+
+    setExamState('results');
+
+    
+
+    try {
+
+      const userId = auth.currentUser?.uid;
+
+      if (userId) {
+
+        await setDoc(doc(db, `batches/${batchId}/user_progress`, userId), {
+
+          examResults: {
+
+            [exerciseId]: {
+
+              score: score,
+
+              total: questions.length,
+
+              timeSpent: totalTimeSpent,
+
+              completedAt: serverTimestamp()
+
+            }
+
+          }
+
+        }, { merge: true });
+
+      }
+
+    } catch (err) {
+
+      console.error("Failed to save results:", err);
+
+    }
+
+  };
+
+
+
+  const getTextClasses = () => {
+
+    switch(settings.textSize) {
+
+      case 'small': return { prompt: 'text-base lg:text-lg', sentence: 'text-lg lg:text-xl', options: 'text-sm lg:text-base' };
+
+      case 'large': return { prompt: 'text-2xl lg:text-3xl', sentence: 'text-3xl lg:text-4xl', options: 'text-xl lg:text-2xl' };
+
+      case 'medium': 
+
+      default: return { prompt: 'text-xl lg:text-2xl', sentence: 'text-2xl lg:text-3xl', options: 'text-base lg:text-lg' };
+
+    }
+
+  };
+
+  const fontSizes = getTextClasses();
+
+
+
+  // ==========================================
+
+  // RENDER: LOADING STATE
+
+  // ==========================================
+
+  if (examState === 'loading') {
+
+    return (
+
+      <div className={`h-screen w-full flex flex-col items-center justify-center font-black uppercase tracking-widest ${isDarkMode ? 'bg-[#0B1121] text-indigo-500' : 'bg-slate-50 text-indigo-600'}`}>
+
+        <Loader2 size={40} className="animate-spin mb-4" />
+
+        Decrypting Exam Securely...
+
+      </div>
+
+    );
+
+  }
+
+
+
+  // ==========================================
+
+  // RENDER: INTRO SCREEN
+
+  // ==========================================
+
+  if (examState === 'intro') {
+
+    return (
+
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? 'bg-[#0B1121] text-white' : 'bg-slate-50 text-slate-900'}`}>
+
+        <div className={`max-w-2xl w-full p-10 md:p-14 rounded-[3rem] border shadow-2xl text-center ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+
+          <div className="w-24 h-24 mx-auto bg-indigo-500/10 text-indigo-500 rounded-[2rem] flex items-center justify-center rotate-3 mb-8">
+
+            <AlertCircle size={40} className="-rotate-3" />
+
+          </div>
+
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4">{examConfig.title}</h1>
+
+          <p className={`text-lg mb-10 leading-relaxed font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+
+            {examConfig.description || "Prepare yourself. Once you begin, the timer will start."}
+
+          </p>
+
+          
+
+          <div className={`flex flex-wrap justify-center gap-4 mb-10`}>
+
+            <div className={`px-5 py-3 rounded-2xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Questions</p>
+
+              <p className="text-xl font-bold">{questions.length}</p>
+
+            </div>
+
+            <div className={`px-5 py-3 rounded-2xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Passing Score</p>
+
+              <p className="text-xl font-bold text-indigo-500">{examConfig.passPercentage}%</p>
+
+            </div>
+
+          </div>
+
+
+
+          <button 
+
+            onClick={() => setExamState('active')}
+
+            className="w-full md:w-auto px-12 py-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-lg rounded-2xl transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex items-center justify-center mx-auto gap-3"
+
+          >
+
+            Start Assessment <PlayCircle size={20} />
+
+          </button>
+
+        </div>
+
+      </div>
+
+    );
+
+  }
+
+
+
+  // ==========================================
+
+  // RENDER: RESULTS SCREEN (STATS)
+
+  // ==========================================
+
+  if (examState === 'results') {
+
+    const accuracy = Math.round((score / questions.length) * 100);
+
+    const passed = accuracy >= examConfig.passPercentage;
+
+
+
+    return (
+
+      <div className={`h-screen w-full flex flex-col items-center justify-center p-6 ${isDarkMode ? 'bg-[#0B1121] text-white' : 'bg-slate-50 text-slate-900'}`}>
+
+        <div className={`max-w-2xl w-full p-10 md:p-14 rounded-[3rem] border shadow-2xl text-center relative overflow-hidden ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+
+          
+
+          {/* Confetti / Background Glow */}
+
+          <div className={`absolute -top-32 -right-32 w-64 h-64 blur-[100px] rounded-full ${passed ? 'bg-emerald-500/30' : 'bg-rose-500/20'}`}></div>
+
+
+
+          <div className={`w-28 h-28 mx-auto rounded-[2.5rem] flex items-center justify-center rotate-3 mb-8 border-4 shadow-xl
+
+            ${passed ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-rose-500/10 text-rose-500 border-rose-500/30'}`}>
+
+            {passed ? <Trophy size={48} className="-rotate-3" /> : <Target size={48} className="-rotate-3" />}
+
+          </div>
+
+          
+
+          <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-2">
+
+            {passed ? "Assessment Cleared!" : "Training Required."}
+
+          </h1>
+
+          <p className={`text-base font-bold uppercase tracking-widest mb-10 ${passed ? 'text-emerald-500' : 'text-rose-500'}`}>
+
+            {passed ? "Excellent Performance" : "Did not meet passing criteria"}
+
+          </p>
+
+          
+
+          <div className={`grid grid-cols-2 gap-4 mb-10`}>
+
+            <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Final Score</p>
+
+              <p className={`text-5xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{score} <span className="text-xl text-slate-500">/ {questions.length}</span></p>
+
+            </div>
+
+            <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Accuracy</p>
+
+              <p className={`text-5xl font-black ${passed ? 'text-emerald-500' : 'text-rose-500'}`}>{accuracy}%</p>
+
+            </div>
+
+            <div className={`col-span-2 p-4 rounded-2xl border flex justify-center items-center gap-3 ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+              <Clock size={16} className="text-indigo-500"/>
+
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Time Elapsed: <span className={isDarkMode ? 'text-white' : 'text-slate-900'}>{formatTime(totalTimeSpent)}</span></p>
+
+            </div>
+
+          </div>
+
+
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+
+            {!passed && (
+
+              <button onClick={() => window.location.reload()} className={`px-8 py-4 rounded-2xl font-black border transition-all active:scale-95 flex justify-center items-center gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}>
+
+                <RefreshCcw size={18}/> Retry Exam
+
+              </button>
+
+            )}
+
+            <button 
+
+              onClick={() => navigate('/student-dashboard')}
+
+              className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex justify-center items-center"
+
+            >
+
+              Return to Dashboard
+
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    );
+
+  }
+
+
+
+  // ==========================================
+
+  // RENDER: ACTIVE EXAM 
+
+  // ==========================================
+
+  
+
+  const timerIsCritical = timeSpent > (currentQ?.idealTimeSeconds || 60);
+
+
+
+  return (
+
+    <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden relative transition-colors duration-500
+
+      ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
+
+      
+
+      <div className={`absolute inset-0 pointer-events-none opacity-[0.02] ${isDarkMode ? 'invert-0' : 'invert'}`} 
+
+            style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }}>
+
+      </div>
+
+
+
+      <div className="h-1.5 bg-slate-800/50 w-full overflow-hidden shrink-0 relative z-30">
+
+        <motion.div 
+
+          className="h-full bg-gradient-to-r from-indigo-600 to-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)]" 
+
+          initial={{ width: 0 }}
+
+          animate={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+
+          transition={{ type: "spring", stiffness: 50, damping: 20 }}
+
+        />
+
+      </div>
+
+
+
+      <header className={`shrink-0 h-16 px-4 lg:px-6 flex items-center justify-between border-b relative z-20 transition-colors duration-500
+
+        ${isDarkMode ? 'border-slate-800/80 bg-[#0B1121]/95 backdrop-blur-md' : 'border-slate-200 bg-white/95 backdrop-blur-md'}`}>
+
+        
+
+        <div className="flex items-center gap-3 w-1/3">
+
+          <button onClick={() => navigate('/student-dashboard')} className={`p-2 -ml-2 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}>
+
+            <X size={20} />
+
+          </button>
+
+          <div className={`hidden sm:block h-6 w-px mx-1 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+
+          <h1 className={`font-bold text-sm truncate hidden sm:block ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+
+            {examConfig.title} &gt;&gt; {currentQ.type}
+
+          </h1>
+
+        </div>
+
+
+
+        <div className="flex items-center justify-center w-1/3">
+
+          <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full border shadow-sm text-sm font-black tracking-widest transition-colors duration-300 ${
+
+            timerIsCritical 
+
+              ? isDarkMode 
+
+                ? 'bg-rose-500/10 text-rose-400 border-rose-500/30 animate-pulse' 
+
+                : 'bg-rose-50 text-rose-600 border-rose-200 animate-pulse'
+
+              : isDarkMode
+
+                ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+
+                : 'bg-white border-slate-200 text-slate-700'
+
+          }`}>
+
+            <Clock size={14} className={timerIsCritical ? 'text-rose-500' : isDarkMode ? 'text-indigo-400' : 'text-slate-400'} />
+
+            {formatTime(timeSpent)}
+
+          </div>
+
+        </div>
+
+
+
+        <div className="flex items-center justify-end gap-1 w-1/3">
+
+          <button 
+
+            onClick={toggleTheme}
+
+            className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-100'}`} 
+
+            title="Toggle Theme"
+
+          >
+
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+
+          </button>
+
+          <button className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`} title="Bookmark Question">
+
+            <Bookmark size={18} />
+
+          </button>
+
+          <button 
+
+            onClick={() => setIsSettingsOpen(true)}
+
+            className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`} 
+
+            title="Settings"
+
+          >
+
+            <SettingsIcon size={18} />
+
+          </button>
+
+        </div>
+
+      </header>
+
+
+
+      <main className="flex-1 overflow-y-auto custom-scrollbar flex flex-col items-center p-4 lg:p-10 relative z-10">
+
+        <div className="w-full max-w-4xl pb-10">
+
+          
+
+          <AnimatePresence mode="wait">
+
+            <motion.div 
+
+              key={currentIndex}
+
+              initial={{ x: 30, opacity: 0 }}
+
+              animate={{ x: 0, opacity: 1 }}
+
+              exit={{ x: -30, opacity: 0 }}
+
+              transition={{ duration: 0.3, ease: "easeOut" }}
+
+              className="space-y-8"
+
+            >
+
+              <div className="flex justify-between items-end">
+
+                <div>
+
+                  <p className={`text-sm font-black mb-1 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Question {currentIndex + 1} of {questions.length}</p>
+
+                  <p className={`text-xs uppercase tracking-widest font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{currentQ.type}</p>
+
+                </div>
+
+                <div className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-500 shadow-sm'}`}>
+
+                  Single Choice
+
+                </div>
+
+              </div>
+
+
+
+              <div className={`space-y-6 rounded-3xl p-6 lg:p-10 border transition-colors duration-500 shadow-sm ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white border-slate-200'}`}>
+
+                <h2 className={`${fontSizes.prompt} font-bold leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+
+                  {currentQ.prompt}
+
+                </h2>
+
+                
+
+                {currentQ.sentence && (
+
+                  <div className={`${fontSizes.sentence} font-black tracking-wide leading-relaxed py-6 border-y border-dashed ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-300 text-slate-900'}`}>
+
+                    {currentQ.highlightedWord ? (
+
+                       currentQ.sentence.replace(`[${currentQ.highlightedWord}]`, '').split(' ').map((word, i) => (
+
+                         <span key={i} className="mr-2">
+
+                           {word === '' ? <span className="text-indigo-500 underline decoration-indigo-500/30 underline-offset-8">{currentQ.highlightedWord}</span> : word}
+
+                         </span>
+
+                       ))
+
+                    ) : currentQ.sentence}
+
+                  </div>
+
+                )}
+
+
+
+                {currentQ.mediaType === 'audio' && (
+
+                   <div className={`p-4 rounded-2xl border flex items-center gap-5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+
+                     <button className="w-12 h-12 bg-indigo-600 text-white rounded-full flex items-center justify-center hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 active:scale-95 shrink-0">
+
+                       <PlayCircle size={24} className="ml-1" />
+
+                     </button>
+
+                     <div className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+
+                       <div className="h-full bg-indigo-500 w-1/3 rounded-full"></div>
+
+                     </div>
+
+                     <Volume2 size={20} className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} />
+
+                   </div>
+
+                )}
+
+              </div>
+
+
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6">
+
+                {currentQ.options.map((opt, idx) => {
+
+                  const isSelected = selectedOpt === opt.id;
+
+                  const hasAnswered = checkStatus !== "idle";
+
+                  const showStats = hasAnswered && settings.showPeerStats;
+
+                  
+
+                  let btnClass = isDarkMode 
+
+                    ? 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800 hover:border-slate-600 text-slate-300' 
+
+                    : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md text-slate-700';
+
+                  let letterBg = isDarkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-500';
+
+                  let statBarColor = isDarkMode ? 'bg-slate-600/20' : 'bg-slate-200/50';
+
+                  
+
+                  if (isSelected) {
+
+                    if (checkStatus === "idle") {
+
+                      btnClass = isDarkMode 
+
+                        ? 'bg-indigo-500/10 border-indigo-500 text-indigo-100 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
+
+                        : 'bg-indigo-50 border-indigo-500 text-indigo-900 shadow-sm';
+
+                      letterBg = 'bg-indigo-600 text-white';
+
+                    } else if (checkStatus === "correct" && !settings.delayCorrectDisplay) {
+
+                      btnClass = isDarkMode 
+
+                        ? 'bg-emerald-500/10 border-emerald-500 text-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.1)]'
+
+                        : 'bg-emerald-50 border-emerald-500 text-emerald-900 shadow-sm';
+
+                      letterBg = 'bg-emerald-500 text-white';
+
+                      statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
+
+                    } else if (checkStatus === "incorrect" && !settings.delayCorrectDisplay) {
+
+                      btnClass = isDarkMode 
+
+                        ? 'bg-rose-500/10 border-rose-500 text-rose-100 animate-shake'
+
+                        : 'bg-rose-50 border-rose-500 text-rose-900 animate-shake';
+
+                      letterBg = 'bg-rose-500 text-white';
+
+                    }
+
+                  } else if (hasAnswered && opt.id === currentQ.correctOptionId && !settings.delayCorrectDisplay) {
+
+                    btnClass = isDarkMode ? 'border-emerald-500/50 text-emerald-300' : 'border-emerald-500/50 text-emerald-700 bg-emerald-50/50';
+
+                    statBarColor = isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10';
+
+                  }
+
+
+
+                  return (
+
+                    <button
+
+                      key={opt.id}
+
+                      disabled={hasAnswered && checkStatus === "correct"}
+
+                      onClick={() => {
+
+                        if (checkStatus !== "correct") {
+
+                          setSelectedOpt(opt.id);
+
+                          setCheckStatus("idle");
+
+                        }
+
+                      }}
+
+                      className={`relative overflow-hidden p-5 rounded-2xl border-2 transition-all duration-200 flex items-center min-h-[80px] group ${btnClass}`}
+
+                    >
+
+                      {/* Animated Peer Stats Overlay */}
+
+                      {showStats && (
+
+                        <motion.div 
+
+                          initial={{ width: 0 }}
+
+                          animate={{ width: `${opt.peerStat}%` }}
+
+                          transition={{ duration: 1.5, ease: "circOut" }}
+
+                          className={`absolute left-0 top-0 bottom-0 ${statBarColor}`} 
+
+                        />
+
+                      )}
+
+
+
+                      <span className={`relative z-10 w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0 mr-4 transition-colors ${letterBg}`}>
+
+                        {['A', 'B', 'C', 'D'][idx]}
+
+                      </span>
+
+                      
+
+                      <span className={`relative z-10 font-bold text-left flex-1 ${fontSizes.options}`}>
+
+                        {opt.text}
+
+                      </span>
+
+
+
+                      {showStats && (
+
+                        <span className={`relative z-10 text-xs font-black ml-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+
+                          {opt.peerStat}%
+
+                        </span>
+
+                      )}
+
+                    </button>
+
+                  );
+
+                })}
+
+              </div>
+
+
+
+              {showExplanation && (
+
+                <div className={`animate-in slide-in-from-bottom-4 fade-in duration-500 p-6 lg:p-8 border rounded-3xl ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
+
+                  <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px] mb-4">
+
+                    <AlertCircle size={16} /> Official Solution
+
+                  </h4>
+
+                  <p className={`leading-relaxed font-medium text-lg ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+
+                    {currentQ.explanation}
+
+                  </p>
+
+                </div>
+
+              )}
+
+            </motion.div>
+
+          </AnimatePresence>
+
+        </div>
+
+      </main>
+
+
+
+      {/* --- BOTTOM ACTION BAR --- */}
+
+      <footer className={`shrink-0 p-4 lg:p-6 border-t flex justify-between items-center relative z-20 transition-colors duration-500
+
+        ${isDarkMode ? 'border-slate-800/80 bg-[#0B1121]/95 backdrop-blur-md' : 'border-slate-200 bg-white/95 backdrop-blur-md'}`}>
+
+        
+
+        <button 
+
+          onClick={handlePrevious}
+
+          disabled={currentIndex === 0}
+
+          className={`px-6 py-3.5 rounded-xl font-black text-sm flex items-center gap-2 transition-colors disabled:opacity-30
+
+            ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+
+        >
+
+          <ChevronLeft size={18} /> Previous
+
+        </button>
+
+
+
+        <div className="flex items-center gap-3 lg:gap-4">
+
+          {checkStatus === "idle" && (
+
+            <button 
+
+              onClick={handleCheck}
+
+              disabled={!selectedOpt}
+
+              className={`px-8 py-3.5 rounded-xl font-black text-sm transition-all disabled:opacity-50 disabled:active:scale-100 active:scale-95 shadow-lg
+
+                ${isDarkMode 
+
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20' 
+
+                  : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-900/20'}`}
+
+            >
+
+              Check Answer
+
+            </button>
+
+          )}
+
+
+
+          {checkStatus === "incorrect" && (
+
+            <button 
+
+              onClick={() => { setSelectedOpt(null); setCheckStatus("idle"); }}
+
+              className={`px-8 py-3.5 border rounded-xl font-black text-sm transition-all active:scale-95
+
+                ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm'}`}
+
+            >
+
+              Clear Response
+
+            </button>
+
+          )}
+
+
+
+          <button 
+
+            onClick={handleNext}
+
+            className={`px-8 py-3.5 rounded-xl font-black text-sm flex items-center gap-2 transition-all active:scale-95 shadow-lg
+
+              ${checkStatus === "correct" || checkStatus === "incorrect" 
+
+                ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-500/20' 
+
+                : isDarkMode 
+
+                  ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white' 
+
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900'
+
+              }
+
+            `}
+
+          >
+
+            {currentIndex < questions.length - 1 ? (
+
+              <>Next <ChevronRight size={18} /></>
+
+            ) : (
+
+              <>Finish Assessment</>
+
+            )}
+
+          </button>
+
+        </div>
+
+      </footer>
+
+
+
+      {/* --- SETTINGS DRAWER OVERLAY --- */}
+
+      {isSettingsOpen && (
+
+        <>
+
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={() => setIsSettingsOpen(false)}></div>
+
+          <div className={`absolute right-0 top-0 bottom-0 w-full max-w-sm border-l shadow-2xl z-[110] flex flex-col animate-in slide-in-from-right duration-300
+
+            ${isDarkMode ? 'bg-[#0F172A] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+
+            
+
+            <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-800' : 'border-slate-200 bg-white'}`}>
+
+              <h3 className={`font-black text-lg tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Test Settings</h3>
+
+              <button onClick={() => setIsSettingsOpen(false)} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}`}>
+
+                <X size={20} />
+
+              </button>
+
+            </div>
+
+
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+
+              <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+
+                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Display</p>
+
+                <ToggleRow title="Solution Mode" desc="See the solution directly when reopening an attempted question" state={settings.solutionMode} onClick={() => setSettings({...settings, solutionMode: !settings.solutionMode})} />
+
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700/50">
+
+                  <div className="flex justify-between items-center mb-3 mt-2"><p className={`text-sm font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Text Size</p></div>
+
+                  <div className={`flex rounded-xl p-1 border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+
+                    {['small', 'medium', 'large'].map((size) => (
+
+                      <button key={size} onClick={() => setSettings({...settings, textSize: size})} className={`flex-1 text-xs py-2 font-bold rounded-lg capitalize transition-all ${settings.textSize === size ? isDarkMode ? 'bg-slate-700 text-white shadow-md' : 'bg-white text-indigo-600 shadow-sm' : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700'}`}>{size}</button>
+
+                    ))}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+
+
+              <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+
+                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Experience</p>
+
+                <ToggleRow title="Auto-start Timer" desc="Timer begins immediately on new questions" state={settings.autoStartTimer} onClick={() => setSettings({...settings, autoStartTimer: !settings.autoStartTimer})} />
+
+                <ToggleRow title="Play Sounds" desc="Audio feedback for correct/incorrect answers" state={settings.playSounds} onClick={() => setSettings({...settings, playSounds: !settings.playSounds})} />
+
+              </div>
+
+
+
+               <div className={`rounded-2xl border p-5 space-y-5 ${isDarkMode ? 'bg-slate-800/30 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+
+                <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Insights</p>
+
+                <ToggleRow title="Show Peer Stats" desc="See what percentage of students chose each option" state={settings.showPeerStats} onClick={() => setSettings({...settings, showPeerStats: !settings.showPeerStats})} />
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </>
+
+      )}
+
+
+
+      <style dangerouslySetInnerHTML={{__html: `
+
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+        .animate-shake { animation: shake 0.3s ease-in-out; }
+
+      `}} />
+
+    </div>
+
+  );
+
+}
+
+
+
+function ToggleRow({ title, desc, state, onClick }) {
+
+  const { isDarkMode } = useTheme();
+
+  return (
+
+    <div className="flex items-start justify-between gap-4 cursor-pointer group" onClick={onClick}>
+
+      <div>
+
+        <p className={`text-sm font-bold transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'}`}>{title}</p>
+
+        <p className={`text-xs mt-1 leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{desc}</p>
+
+      </div>
+
+      <div className={`relative shrink-0 w-12 h-6 rounded-full transition-colors duration-300 mt-0.5 ${state ? 'bg-indigo-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}>
+
+        <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform duration-300 shadow-sm ${state ? 'translate-x-6' : 'translate-x-0'}`}></div>
+
+      </div>
+
+    </div>
+
+  );
+
+}
+
+
+
+make this exam engine work for all type of question and for kanji for now just add a text field later i will add canvas and when a user attempt a question it doesnt see clear response option  actually remove clear response option and just make it such that clickiing the option again clears it and after attempting a question it asks whether the question was easy mid hard or tough  and while solving question we have hint option too it shows the hint by teacher with setting feature as i gave in the image and after attempting the question th response data is saved in analytics collection in that exercises collection in that a document with exercise id name batch and etc details then under it we have questions collection in that we have questions document in it we have fields related to question like question id (we do not need to waste more space) then under question document we have attempts colection where each document is a attempt response data with fields like userid responsetime(when the question response was sent)  fi question attempted is correct or incorrect , attempts dictionary with  first attempt correct and  second attempt correct (becauseif the user did the first attempt wrong  the first attempt correct will be false and then user can either skip to show solution  or if user attempts second attempt  if it is right the second attempt correct is gonna be true if both are flase then iscorrect will be flase and if any is true is correct will be true ) now after these the attempt specific data will be saved under each attempt different if its the first attempt it will be saved under first attempt if second it will be saved under sceond attempt time spent ffro that attempt for that question in seconds, hintviewed bool, points earned for that question, the correct options just like in question bank, the selected options by user , studentdiffuclty level that user gave at end of the question, also question id, response id, option selection timeline wht {optiondid: 01, option: A, timestamp:5, optionid:02, option:B, timestamp:7sec} which will secord when each option was selected if an option is selected again it will be added again but with new timestamp, first response time when user clicked first choice, last repsonsetime when user cliked his last choice , chnagedanswer(which checks if user siwtcjed answer in between, chnagecount which is how many times changed, diffuculty (set by teacher, student difficulty is what student selected), topic and subtopic these three fetched directly from question bank wasSkippedInitially (if the question was skipped withput attempting ), revisited(if the question which was ksipped was revisited in the same exercise session, if student finished exam and reattempt exam for practice again it doesnt count as revisit ), time per option(time when option wa sslected so its basicallly differece between two option slecetion timetsamp), hover time { "A": 3, 'B":5}(time for which the option was hovered and if hovered multiple times it just accumulates or adds it, focus lost count (number of times user left the exam screen triggers when tabswicthed, minimized app, clicks outside), tabswitchedcount (number of times the user siwtched tab, or minimized app), and all features related to it should be added in the exam engine also btw the second attempt will only be given if secondAttempt field for that question is true  or else just one attempt and its analytic data
+
+
+
+this all is gonna be to much so lets divide al this in different files u tell me how many files i need to make and then give me perfect code one by one
