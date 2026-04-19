@@ -144,7 +144,7 @@ export default function ExamEngine() {
         const exerciseSnap = await getDoc(doc(db, 'batches', batchId, 'module', modId, 'chapters', chapId, 'exercises', exerciseId));
         if (!exerciseSnap.exists()) return navigate(-1);
         const data = exerciseSnap.data();
-        setExamConfig({ title: data.title, description: data.description, passPercentage: data.passPercentage || 80, duration: data.duration, batch: batchId });
+        setExamConfig({ title: data.title, description: data.description, passPercentage: data.passPercentage || 80, duration: data.duration, batch: batchId, attemptPoints: data.attemptPoints || 0 });
 
         const qIds = data.questionIds || [];
         if (qIds.length === 0) return setExamState('intro');
@@ -219,10 +219,9 @@ export default function ExamEngine() {
     session.toggleOption(optionId, isMulti);
   };
 
-  // 🚨 COMPLETELY UPGRADED: Fixes Text Matching, Fixes DB Saving, Fixes Syntax Error
+  // 🚨 COMPLETELY UPGRADED: Telemetry + Event Shield + Text Sanitization
   const handleCheck = (manualValue = null) => {
-    // --- 🚨 THE CRASH FIX (EVENT OBJECT SHIELD) ---
-    // If a button click passes a React Mouse Event, destroy it so it doesn't break localStorage!
+    // Event Object Shield to prevent circular JSON crash
     if (manualValue && typeof manualValue === 'object' && 'nativeEvent' in manualValue) {
       manualValue = null;
     }
@@ -236,7 +235,7 @@ export default function ExamEngine() {
     let isPartial = false; 
     let rawResponse = manualValue !== null ? [manualValue] : currentState.selectedOptions;
 
-    // --- 1. SMART CHECKING LOGIC ---
+    // --- SMART CHECKING LOGIC ---
     if (currentQ.type.includes('choice')) {
       const correctIds = currentQ.correctOptions || [];
       const selectedIds = currentState.selectedOptions || [];
@@ -252,24 +251,65 @@ export default function ExamEngine() {
         isCorrect = correctIds.includes(selectedIds[0]);
       }
     } else {
-      // THE TEXT FIX: Sanitize both inputs to ignore cases and spaces
       const userInput = (manualValue !== null ? manualValue : currentState.selectedOptions[0] || "").toString().trim().toLowerCase();
       const correctList = (currentQ.correctOptions || []).map(ans => ans.toString().trim().toLowerCase());
       const fallback = currentQ.options?.find(o => o.isCorrect)?.text?.toString().trim().toLowerCase();
 
       isCorrect = correctList.includes(userInput) || (!!fallback && userInput === fallback);
-      rawResponse = [userInput]; // Standardize for the DB
+      rawResponse = [userInput]; 
     }
 
-    // --- 2. ATTEMPT RECORDER (THE DB FIX) ---
+    // --- 🚨 THE ATTEMPT BUILDER (Rich Payload Restored from Telemetry) ---
+    // --- 🚨 THE ATTEMPT BUILDER (Rich Payload Restored from Telemetry) ---
+    const attemptNumber = (currentState.attempts?.length || 0) + 1;
+    const isFirstAttempt = attemptNumber === 1;
+    const pointsEarned = isCorrect ? (isFirstAttempt ? (currentQ.points || 1) : ((currentQ.points || 1) / 2)) : 0;
+    
+    // 🚨 NEW: Smart Response ID Generation (res_123 and res_123_second)
+    let generatedResponseId;
+    if (isFirstAttempt) {
+      generatedResponseId = `res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    } else {
+      // Grab the ID from the first attempt and append _second
+      const firstId = currentState.attempts[0].responseId;
+      generatedResponseId = attemptNumber === 2 ? `${firstId}_second` : `${firstId}_attempt${attemptNumber}`;
+    }
+
+    const attemptTelemetry = telemetry.extractAndResetForNextAttempt ? telemetry.extractAndResetForNextAttempt() : {};
+    const currentTimeSpent = timeSpentRef.current[currentQ.id] || 0;
+    const timeExceeded = currentTimeSpent > (currentQ.idealTimeSeconds || 60);
+
     const newAttempt = {
-      responseId: Math.random().toString(36).substring(2, 9), // Unique ID for Firestore
-      response: rawResponse,
-      isCorrect: isCorrect,
-      timestamp: Date.now()
+      attemptNumber,
+      userId: auth.currentUser?.uid || "anonymous",
+      responseTime: new Date(), 
+      isCorrect,
+      attempts: {
+        firstAttemptCorrect: attemptNumber === 1 ? isCorrect : currentState.attempts?.[0]?.isCorrect || false,
+        secondAttemptCorrect: attemptNumber === 2 ? isCorrect : false
+      },
+      timeSpentInSeconds: currentTimeSpent,
+      hintViewed: currentState.hintViewed || false,
+      pointsEarned,
+      correctOptions: currentQ.correctOptions || [],
+      selectedOptions: [...rawResponse], 
+      questionId: currentQ.id,
+      questionType: currentQ.type || 'unknown', 
+      
+      // 🚨 Using the newly generated smart ID
+      responseId: generatedResponseId,
+      
+      difficulty: currentQ.difficulty || 'mid',
+      topic: currentQ.topic || 'Uncategorized',
+      subTopic: currentQ.subTopic || 'Uncategorized',
+      wasSkippedInitially: currentState.wasSkippedInitially || false,
+      revisited: currentState.revisited || false,
+      exceededExpectedTime: timeExceeded,
+      exceededExpectedTimeBy: timeExceeded ? currentTimeSpent - (currentQ.idealTimeSeconds || 60) : 0,
+      ...attemptTelemetry 
     };
 
-    // --- 3. STATE UPDATE ---
+    // --- STATE UPDATE ---
     if (isCorrect) {
       if (settings.playSounds) playAudioFeedback(true);
       setQuestionStates(prev => ({
@@ -282,7 +322,7 @@ export default function ExamEngine() {
           attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
         }
       }));
-      setScore(s => s + currentQ.points);
+      setScore(s => s + pointsEarned);
     } else if (currentQ.secondAttempt && !currentState.isSecondAttempt && currentState.status !== 'attempt1_failed') {
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
@@ -294,6 +334,10 @@ export default function ExamEngine() {
           attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
         }
       }));
+      
+      // Reset timer visually for second attempt
+      timeSpentRef.current[currentQ.id] = 0;
+      setTimeSpent(0);
     } else {
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
@@ -354,6 +398,7 @@ export default function ExamEngine() {
       if (session.currentIndex < questions.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 300));
         session.setCurrentIndex(p => p + 1);
+        setTimeSpent(timeSpentRef.current[questions[session.currentIndex + 1]?.id] || 0);
       } else {
         setShowFinishModal(true); 
       }
@@ -379,22 +424,51 @@ export default function ExamEngine() {
       }));
 
       session.setCurrentIndex(p => p - 1);
+      setTimeSpent(timeSpentRef.current[questions[session.currentIndex - 1]?.id] || 0);
     }
   };
 
-  const finishExam = async (forceSubmit = false) => {
+  // 🚨 THE DATABASE PUSHER (Rerouted to 'analytics/exercises/exercises/{exerciseId}')
+ const finishExam = async (forceSubmit = false) => {
     if (!forceSubmit && examState === 'active' && session.currentState?.status === 'completed' && !session.currentState?.studentDifficulty) {
       setShowRatingPrompt(true);
       return;
     }
 
-    setExamState('results');
+    
     const userId = auth.currentUser?.uid;
     if (!userId) return;
 
     try {
-      const batch = writeBatch(db);
+      // 🚨 NEW: Fetch how many times they've taken this exercise before!
+      const userExerciseRef = doc(db, 'users', userId, 'Batches', batchId, 'exercises', exerciseId);
+      const userExerciseSnap = await getDoc(userExerciseRef);
+      const previousAttemptsCount = userExerciseSnap.exists() ? (userExerciseSnap.data().totalAttempts || 0) : 0;
       
+      // Determine this current attempt number
+      const currentExerciseAttemptNumber = previousAttemptsCount + 1;
+      const exerciseAttemptId = `exam_attempt_${currentExerciseAttemptNumber}_${Date.now()}`;
+
+      const batch = writeBatch(db);
+      const sessionResponses = [];
+      const wasAnyHintUsed = Object.values(session.questionStates).some(q => q.hintViewed === true);
+      const noHintBonusXP = wasAnyHintUsed ? 0 : 50; // You can change 50 to whatever you want
+
+      // 🚨 PATH CHANGE 1: Build the user document structure you requested
+      const userBatchRef = doc(db, 'users', userId, 'Batches', batchId);
+      batch.set(userBatchRef, { batchId, lastUpdated: serverTimestamp() }, { merge: true });
+      
+      batch.set(userExerciseRef, { 
+        totalAttempts: currentExerciseAttemptNumber, 
+        lastAttemptAt: serverTimestamp() ,
+        pointsEarned: examConfig.attemptPoints || 0, // This is the participation reward
+        isRedeemed: previousAttemptsCount === 0 ? false : (userExerciseSnap.data()?.isRedeemed || false),
+        firstAttemptScore: previousAttemptsCount === 0 ? session.score : (userExerciseSnap.data()?.firstAttemptScore || 0),
+        noHintBonusXP: previousAttemptsCount === 0 ? noHintBonusXP : (userExerciseSnap.data()?.noHintBonusXP || 0),
+        usedHints: wasAnyHintUsed
+      }, { merge: true });
+
+      // Keep original global progress update
       const progressRef = doc(db, 'batches', batchId, 'user_progress', userId);
       batch.set(progressRef, { 
         examResults: { 
@@ -402,51 +476,92 @@ export default function ExamEngine() {
         }
       }, { merge: true });
 
-      const exerciseDocRef = doc(db, 'engine_logs', exerciseId);
-      batch.set(exerciseDocRef, { exerciseId, name: examConfig.title, batch: batchId, lastAttemptBy: userId, totalViolations: violationCount, recordedAt: serverTimestamp() }, { merge: true });
+      // Keep Exercise Metadata for global analytics
+      const exerciseDocRef = doc(db, 'analytics', 'exercises', 'exercises', exerciseId);
+      batch.set(exerciseDocRef, { 
+        exerciseId, name: examConfig.title, batch: batchId, lastAttemptBy: userId, totalViolations: violationCount, recordedAt: serverTimestamp() 
+      }, { merge: true });
 
       questions.forEach((q) => {
         const qState = session.questionStates[q.id];
-        const questionDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id);
+        const questionDocRef = doc(db, 'analytics', 'exercises', 'exercises', exerciseId, 'questions', q.id);
         
         if (!qState || !qState.attempts || qState.attempts.length === 0) {
           batch.set(questionDocRef, { 
-            questionId: q.id, 
-            status: 'skipped_or_unattempted', 
-            topic: q.topic || 'Uncategorized', 
-            userNote: qState?.userNote || "", 
-            lastUpdated: serverTimestamp() 
+            questionId: q.id, status: 'skipped_or_unattempted', topic: q.topic || 'Uncategorized', userNote: qState?.userNote || "", lastUpdated: serverTimestamp() 
           }, { merge: true });
+          
+          sessionResponses.push({ questionId: q.id, status: 'skipped', responseIds: [] });
           return;
         }
 
-        batch.set(questionDocRef, { 
-          questionId: q.id, 
-          userNote: qState.userNote || "", 
-          lastUpdated: serverTimestamp() 
-        }, { merge: true });
+        batch.set(questionDocRef, { questionId: q.id, userNote: qState.userNote || "", lastUpdated: serverTimestamp() }, { merge: true });
+
+        const finalAttempt = qState.attempts[qState.attempts.length - 1];
+        // Collect all response IDs for this question (e.g., ['res_123', 'res_123_second'])
+        const allResponseIdsForThisQuestion = qState.attempts.map(a => a.responseId);
+
+        // 🚨 THIS Maps Question ID to Response IDs for the User's Attempt Document
+        sessionResponses.push({
+          questionId: q.id,
+          questionType: q.type,
+          responseIds: allResponseIdsForThisQuestion, 
+          finalSelectedOptions: finalAttempt.selectedOptions,
+          isCorrect: finalAttempt.isCorrect,
+          pointsEarned: finalAttempt.pointsEarned,
+          timeSpentInSeconds: finalAttempt.timeSpentInSeconds
+        });
 
         qState.attempts.forEach((attempt) => {
           const finalAttemptData = { 
-            ...attempt, 
-            studentDifficulty: qState.studentDifficulty || 'unrated', 
-            userNote: qState.userNote || "", 
-            responseTime: serverTimestamp() 
+            ...attempt, studentDifficulty: qState.studentDifficulty || 'unrated', userNote: qState.userNote || "", responseTime: serverTimestamp() 
           };
-          const attemptDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id, 'attempts', attempt.responseId);
+          const attemptDocRef = doc(db, 'analytics', 'exercises', 'exercises', exerciseId, 'questions', q.id, 'attempts', attempt.responseId);
           batch.set(attemptDocRef, finalAttemptData);
         });
+
+        // 🚨 UPGRADE PEER STATS IN THE MAIN QUESTION BANK
+        if (q.type.includes('choice')) {
+          const firstAttempt = qState.attempts[0];
+          const selectedIds = firstAttempt.selectedOptions || [];
+          if (selectedIds.length > 0) {
+            const safeSelectedIds = selectedIds.map(id => String(id));
+            const updatedOptions = (q.options || []).map(opt => {
+              if (safeSelectedIds.includes(String(opt.id))) {
+                return { ...opt, count: (opt.count || 0) + 1 };
+              }
+              return opt;
+            });
+            const qBankRef = doc(db, 'question_bank', batchId, 'questions', q.id);
+            batch.set(qBankRef, { options: updatedOptions }, { merge: true });
+          }
+        }
+      });
+
+      // 🚨 PATH CHANGE 2: Save the Attempt Document in the new User Path!
+      const userAttemptRef = doc(db, 'users', userId, 'Batches', batchId, 'exercises', exerciseId, 'attempts', exerciseAttemptId);
+      batch.set(userAttemptRef, {
+        exerciseAttemptId: exerciseAttemptId,
+        attemptNumber: currentExerciseAttemptNumber,
+        score: session.score,
+        totalQuestions: questions.length,
+        totalTimeSpent: totalTimeSpent,
+        totalViolations: violationCount,
+        submittedAt: serverTimestamp(),
+        responses: sessionResponses 
       });
 
       await batch.commit();
+
+      setExamState('results');
       
       localStorage.removeItem(`exam_draft_${exerciseId}`); 
       localStorage.removeItem(`exam_timer_${exerciseId}`); 
       
-      console.log("✅ Deep Logs, Timers, & Notes Saved Successfully");
+      console.log("✅ Deep Analytics & User Attempt History Saved Successfully");
 
     } catch (err) {
-      console.error("❌ Failed to save deep analytics:", err);
+      console.error("❌ Failed to save exam data:", err);
     }
   };
 
@@ -485,7 +600,9 @@ export default function ExamEngine() {
     );
   }
 
-  if (examState === 'results') return <ExamResults score={session.score} totalQuestions={questions.length} examConfig={examConfig} totalTimeSpent={totalTimeSpent} isDarkMode={isDarkMode} onDashboard={() => navigate('/student-dashboard')} />;
+  const totalPossiblePoints = questions.reduce((acc, q) => acc + (q.points || 0), 0);
+
+  if (examState === 'results') return <ExamResults score={session.score} totalPossiblePoints={totalPossiblePoints} totalQuestions={questions.length} examConfig={examConfig} totalTimeSpent={totalTimeSpent} isDarkMode={isDarkMode} onDashboard={() => navigate('/student-dashboard')} />;
 
   const fontClasses = { small: 'text-base', medium: 'text-xl', large: 'text-3xl', xlarge: 'text-4xl' }[settings.textSize] || 'text-xl';
   const timerIsCritical = timeSpent > (session.currentQ?.idealTimeSeconds || 60);

@@ -20,6 +20,7 @@ export default function QuestionForge() {
   const [isImporting, setIsImporting] = useState(false); 
   const [importId, setImportId] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
+  const [attemptPoints, setAttemptPoints] = useState(0); // Add this line
   
   const [quizTitle, setQuizTitle] = useState('');
   const [quizDescription, setQuizDescription] = useState('');
@@ -83,6 +84,7 @@ export default function QuestionForge() {
             });
             setQuestions(loadedQs);
           } else if(data.questions?.length > 0) setQuestions(data.questions); 
+          setAttemptPoints(data.attemptPoints || 0);
         }
       } catch (error) { console.error(error); } finally { setIsLoading(false); }
     };
@@ -154,7 +156,7 @@ export default function QuestionForge() {
       });
 
       const exerciseRef = exerciseId ? doc(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`, exerciseId) : doc(collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`));
-      batch.set(exerciseRef, { title: quizTitle, description: quizDescription, type: 'quiz', isLocked, createdAt: serverTimestamp(), allowPause, passPercentage: Number(passPercentage), totalPoints: totalPointsSum, duration: calculatedDuration, questionIds: lightweightIds, isCompleted: false }, { merge: true });
+      batch.set(exerciseRef, { title: quizTitle, description: quizDescription, type: 'quiz', isLocked, createdAt: serverTimestamp(), allowPause, passPercentage: Number(passPercentage), attemptPoints: Number(attemptPoints), totalPoints: totalPointsSum, duration: calculatedDuration, questionIds: lightweightIds, isCompleted: false }, { merge: true });
       if (!exerciseId) batch.update(doc(db, `batches/${batchId}/module/${modId}/chapters`, chapId), { no_of_exercises: increment(1) });
 
       await batch.commit(); navigate(-1); 
@@ -176,7 +178,7 @@ export default function QuestionForge() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 mt-10 space-y-10">
-        <GlobalExamSettings quizTitle={quizTitle} setQuizTitle={setQuizTitle} quizDescription={quizDescription} setQuizDescription={setQuizDescription} passPercentage={passPercentage} setPassPercentage={setPassPercentage} allowPause={allowPause} setAllowPause={setAllowPause} isLocked={isLocked} setIsLocked={setIsLocked} isDarkMode={isDarkMode} />
+        <GlobalExamSettings quizTitle={quizTitle} setQuizTitle={setQuizTitle} attemptPoints={attemptPoints} setAttemptPoints={setAttemptPoints}  quizDescription={quizDescription} setQuizDescription={setQuizDescription} passPercentage={passPercentage} setPassPercentage={setPassPercentage} allowPause={allowPause} setAllowPause={setAllowPause} isLocked={isLocked} setIsLocked={setIsLocked} isDarkMode={isDarkMode} />
         
         <section className="space-y-6">
           <div className="flex items-end justify-between mb-2">

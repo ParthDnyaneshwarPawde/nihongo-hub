@@ -3,9 +3,7 @@ import React, { useState, useEffect } from 'react';
 export default function TextInterface({ currentQ, currentState, settings, toggleOption, telemetry, isDarkMode, fontClasses }) {
   const [localValue, setLocalValue] = useState(currentState?.selectedOptions[0] || '');
 
-  // 🚨 UPGRADE: Fallback for text size if undefined
   const textSizeClass = fontClasses || 'text-xl';
-  // 🚨 UPGRADE: Safe fallback for the settings prop
   const delayCorrectAnswer = settings?.delayCorrectAnswer ?? false;
 
   useEffect(() => {
@@ -26,17 +24,14 @@ export default function TextInterface({ currentQ, currentState, settings, toggle
     if (trimmed !== '') telemetry.recordOptionClick('text_input', trimmed);
   };
 
-  // 🚨 UPGRADE: Properly splits the states. It ONLY locks if the question is 100% completed.
   const status = currentState?.status;
   const isLocked = status === 'completed';
   const isFailedTry = status === 'attempt1_failed';
   
-  const selectedAnswer = currentState?.selectedOptions[0] || '';
-  const typedAnswer = selectedAnswer.trim().normalize('NFKC').toLowerCase();
-  const validAnswers = currentQ?.correctOptions || [];
-  const isCorrect = validAnswers.some(validAns => 
-    validAns.trim().normalize('NFKC').toLowerCase() === typedAnswer
-  );
+  // 🚨 THE FIX: Trust the Engine!
+  // The ExamEngine already did the hard work of verifying the answer. 
+  // We just read the boolean it passed down instead of recalculating it.
+  const isCorrect = currentState?.isCorrect === true;
 
   let containerClass = isDarkMode ? 'bg-[#0B1121] border-slate-800' : 'bg-white border-slate-200';
   let inputColors = isDarkMode ? 'border-slate-700 text-white focus:border-indigo-500' : 'border-slate-300 text-slate-900 focus:border-indigo-500';
@@ -54,10 +49,13 @@ export default function TextInterface({ currentQ, currentState, settings, toggle
       inputColors = isDarkMode ? 'border-rose-500 text-rose-400' : 'border-rose-500 text-rose-600';
       labelColor = isDarkMode ? 'text-rose-500/80' : 'text-rose-600/80';
       
-      // 🚨 UPGRADE: Respect delayCorrectAnswer setting for Text Inputs
-      // If it's turned off, we show them what they should have typed!
-      labelText = !delayCorrectAnswer && validAnswers.length > 0 
-        ? `Incorrect Answer (Correct: ${validAnswers[0]})` 
+      // 🚨 BETTER FALLBACK: Grab the correct answer from correctOptions OR options array
+      const validAnswers = currentQ?.correctOptions || [];
+      const fallbackAns = currentQ?.options?.find(o => o.isCorrect)?.text;
+      const displayCorrect = validAnswers.length > 0 ? validAnswers[0] : fallbackAns;
+
+      labelText = !delayCorrectAnswer && displayCorrect 
+        ? `Incorrect Answer (Correct: ${displayCorrect})` 
         : 'Incorrect Answer';
     }
   } else if (isFailedTry) {
@@ -83,7 +81,7 @@ export default function TextInterface({ currentQ, currentState, settings, toggle
         onChange={handleChange} 
         onBlur={handleBlur} 
         onKeyDown={(e) => e.key === 'Enter' && handleBlur()} 
-        disabled={isLocked} // 🚨 FIX: Now it only locks when the question is totally finished!
+        disabled={isLocked}
         placeholder="Type your answer here and press Enter..."
         className={`w-full bg-transparent border-b-2 outline-none py-2 font-bold transition-colors disabled:opacity-100 ${textSizeClass} ${inputColors}`}
       />

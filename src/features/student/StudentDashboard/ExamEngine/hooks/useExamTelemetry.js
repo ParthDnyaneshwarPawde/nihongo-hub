@@ -6,7 +6,7 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
   const questionStartTime = useRef(Date.now());
   const hoverStartTimes = useRef({});
   
-  // 🚨 UPGRADE: Persistent global counters for the entire exam session
+  // Persistent global counters for the entire exam session
   const sessionViolations = useRef({ tabSwitches: 0, focusLosses: 0 });
 
   function getInitialTelemetry() {
@@ -23,25 +23,26 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
     };
   }
 
+  // 🚨 THE FIX: Wait until the exam is active to start the atomic clock!
   useEffect(() => {
-    setTelemetry(getInitialTelemetry());
-    questionStartTime.current = Date.now();
-    hoverStartTimes.current = {};
-  }, [currentQuestionId]);
+    if (isActive) {
+      setTelemetry(getInitialTelemetry());
+      questionStartTime.current = Date.now();
+      hoverStartTimes.current = {};
+    }
+  }, [currentQuestionId, isActive]); // <-- Added isActive here
 
-  // 🚨 UPGRADE: Only attach listeners and track violations if the exam is ACTIVE
+  // Only attach listeners and track violations if the exam is ACTIVE
   useEffect(() => {
     if (!isActive) return;
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Increment both the local question telemetry and the global session tracker
         sessionViolations.current.tabSwitches += 1;
         const currentTotal = sessionViolations.current.tabSwitches;
 
         setTelemetry(prev => ({ ...prev, tabSwitchedCount: prev.tabSwitchedCount + 1 }));
         
-        // Pass the violation type and the exact global count to the Engine
         if (onViolation) {
           onViolation('tab_switch', currentTotal);
         }
@@ -76,6 +77,10 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
       const newTimeline = [...prev.optionSelectionTimeline, { optionId, option: optionLabel, timestampSec }];
       const timeSinceLastClick = isFirst ? timestampSec : Number((timestampSec - prev.lastResponseTime).toFixed(1));
 
+      // 🚨 THE FIX: Bind the option label to the time so it reads beautifully in Firebase
+      const displayLabel = optionLabel || `Option ${optionId}`;
+      const formattedTimeLog = `${displayLabel}: ${timeSinceLastClick}s`;
+
       return {
         ...prev,
         firstResponseTime: isFirst ? timestampSec : prev.firstResponseTime,
@@ -83,7 +88,8 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
         changeCount: isFirst ? 0 : prev.changeCount + 1,
         changedAnswer: !isFirst,
         optionSelectionTimeline: newTimeline,
-        timePerOption: [...prev.timePerOption, timeSinceLastClick]
+        // Push the beautifully formatted string instead of just the raw number
+        timePerOption: [...prev.timePerOption, formattedTimeLog]
       };
     });
   }, []);
