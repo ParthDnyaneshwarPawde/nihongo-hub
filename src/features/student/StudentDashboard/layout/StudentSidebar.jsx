@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useTheme } from '@/context/ThemeContext';
+import StudentRankWidget from '../../components/StudentRankWidget'; // 🚨 IMPORT NEW WIDGET
 
 function SidebarLink({ icon, label, active, onClick, danger, badge, isCollapsed }) {
   const { isDarkMode } = useTheme();
@@ -122,29 +123,11 @@ export default function StudentSidebar({
           </div>
         </nav>
 
-        {/* Gamification Widget */}
+        {/* 🚨 NEW GAMIFICATION WIDGET INTEGRATION */}
         <div className={`p-6 ${isDesktopSidebarCollapsed ? 'md:px-4 md:pb-8' : ''} mt-auto shrink-0`}>
-          {isDesktopSidebarCollapsed && (
-            <div className={`hidden md:flex p-3 rounded-2xl flex-col items-center justify-center gap-2 border shadow-lg ${isDarkMode ? 'bg-slate-900/80 border-indigo-500/20 shadow-indigo-500/10' : 'bg-indigo-50 border-indigo-100'}`} title="Rank: Samurai | 2,450 XP">
-               <Trophy size={20} className="text-amber-500 drop-shadow-md" />
-               <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-indigo-900'}`}>2.4K</span>
-            </div>
-          )}
-          
-          <div className={`${isDesktopSidebarCollapsed ? 'md:hidden block' : 'block'} p-5 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-slate-900/50 border-indigo-500/20 shadow-indigo-500/10' : 'bg-indigo-50 border-indigo-100 shadow-indigo-100'}`}>
-            <div className="flex justify-between items-center mb-3">
-              <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Rank: Samurai</span>
-              <Trophy size={14} className="text-amber-500" />
-            </div>
-            <div className="flex items-center gap-2 mb-4">
-              <span className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>2,450</span>
-              <span className="text-xs text-slate-500 font-bold uppercase">XP</span>
-            </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div className="bg-indigo-600 h-full w-[70%] rounded-full transition-all duration-[1500ms] ease-out"></div>
-            </div>
-          </div>
+          <StudentRankWidget isCollapsed={isDesktopSidebarCollapsed} />
         </div>
+
       </aside>
     </>
   );

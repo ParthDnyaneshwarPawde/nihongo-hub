@@ -13,15 +13,24 @@ export default function ProtectedRoute({ children, requiredRole }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Fetch the role from Firestore
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        if (userDoc.exists()) {
-          setRole(userDoc.data().role);
+        try {
+          // 🚨 Wrapped in a try/catch so it can't silently crash the app
+          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+          if (userDoc.exists()) {
+            setRole(userDoc.data().role);
+          } else {
+            console.warn("ProtectedRoute: User document does not exist!");
+          }
+        } catch (error) {
+          console.error("ProtectedRoute: Error fetching user role:", error);
+        } finally {
+          // 🚨 FINALLY guarantees the loading screen goes away, even if the DB fails
+          setLoading(false);
         }
       } else {
         setUser(null);
+        setLoading(false); // Make sure to stop loading if there is no user
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

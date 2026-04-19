@@ -136,6 +136,13 @@ export function useOnboardingFlow() {
         createdAt: serverTimestamp(),
         updatedAt: new Date().toISOString(),
         email: formData.email,
+        
+        // 🚨 RANK SYSTEM INITIALIZATION
+        xp: 0,
+        rank: "Mugaku",
+        tier: "Awakening",
+        claimedXPIds: [],
+        
       }, { merge: true });
 
       navigate('/student-dashboard');

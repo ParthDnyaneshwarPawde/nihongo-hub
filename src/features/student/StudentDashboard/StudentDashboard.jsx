@@ -58,6 +58,7 @@ export default function StudentDashboard() {
   const activeBatch = dynamicBatches.find(b => b.title === level || b.level === level);
   const activeBatchId = activeBatch ? activeBatch.id : null;
 
+
   // Modal States
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
@@ -129,28 +130,41 @@ export default function StudentDashboard() {
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar relative">
           
-          {latestBulletin && (
-          <motion.div initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-8 p-4 bg-indigo-600 rounded-3xl flex items-center justify-between shadow-xl shadow-indigo-600/20">
-            <div className="flex items-center gap-4 px-4">
-              <div className="p-2 bg-white/20 rounded-xl text-white shrink-0">
-                <Bell className="animate-bounce" size={20} />
-              </div>
-              <div className="min-w-0">
-                {/* 👇 Title goes here */}
-                <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest truncate">
-                  {latestBulletin.title || "Global Bulletin"}
-                </p>
-                {/* 👇 Message goes here */}
-                <p className="text-white font-bold truncate max-w-md lg:max-w-2xl">
-                  {latestBulletin.message}
-                </p>
-              </div>
-            </div>
-            <button onClick={() => setLatestBulletin(null)} className="p-3 text-indigo-200 hover:text-white transition-colors shrink-0">
-              <X size={20} />
-            </button>
-          </motion.div>
-        )}
+          {latestBulletin && localStorage.getItem('dismissedBulletinId') !== latestBulletin.id && (
+  <motion.div 
+    initial={{ y: -30, opacity: 0 }} 
+    animate={{ y: 0, opacity: 1 }} 
+    className="mb-6 md:mb-8 p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-3xl flex items-center justify-between shadow-xl shadow-indigo-600/20"
+  >
+    <div className="flex items-center gap-3 md:gap-4 px-2 md:px-4 min-w-0">
+      <div className="p-1.5 md:p-2 bg-white/20 rounded-lg md:rounded-xl text-white shrink-0">
+        <Bell className="animate-bounce w-4 h-4 md:w-5 md:h-5" />
+      </div>
+      <div className="min-w-0">
+        {/* 👇 Title */}
+        <p className="text-[8px] md:text-[10px] font-black text-indigo-200 uppercase tracking-widest truncate">
+          {latestBulletin.title || "Global Bulletin"}
+        </p>
+        {/* 👇 Message */}
+        <p className="text-xs md:text-sm text-white font-bold truncate max-w-[200px] sm:max-w-sm md:max-w-md lg:max-w-2xl">
+          {latestBulletin.message}
+        </p>
+      </div>
+    </div>
+    <button 
+      onClick={() => {
+        // 🚨 Save the ID to local storage so it stays hidden on reload
+        if (latestBulletin.id) {
+          localStorage.setItem('dismissedBulletinId', latestBulletin.id);
+        }
+        setLatestBulletin(null);
+      }} 
+      className="p-2 md:p-3 text-indigo-200 hover:text-white transition-colors shrink-0"
+    >
+      <X className="w-4 h-4 md:w-5 md:h-5" />
+    </button>
+  </motion.div>
+)}
 
           {/* LAYER 1: DEPTH DISSOLVE CONTENT STAGE */}
           <AnimatePresence mode="wait">

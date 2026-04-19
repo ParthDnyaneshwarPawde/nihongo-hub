@@ -7,24 +7,29 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// 🚨 FIREBASE IMPORTS
+// 🚨 FIREBASE & LOGIC IMPORTS
 import { db, auth } from '@services/firebase'; 
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth'; // 🚨 NEW IMPORT
+import { doc, getDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { calculateRank } from '@/utils/rankLogic'; // 👈 Import your rank logic
 
 export default function QuickStats({ batchId: propBatchId }) {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
-  
-  // Accept batchId from URL params OR as a direct prop
   const { batchId: paramBatchId } = useParams();
   const batchId = propBatchId || paramBatchId; 
 
   const [progress, setProgress] = useState(0); 
   const [isLoading, setIsLoading] = useState(true);
-  const [nextLesson, setNextLesson] = useState(null); // 🚨 NEW: Stores the actual next lesson object
+  const [nextLesson, setNextLesson] = useState(null); 
+  
+  // 🚨 LIVE USER STATS
+  const [userStats, setUserStats] = useState({ xp: 0, streak: 0 });
 
   const isFirstTime = progress === 0;
+
+  // Calculate live rank from live XP
+  const liveRank = calculateRank(userStats.xp);
 
   const greetings = [
     { title: "Your Odyssey Begins.", sub: "The path to mastery is open. Strike while the iron is hot." },
@@ -36,10 +41,34 @@ export default function QuickStats({ batchId: propBatchId }) {
   const [greeting, setGreeting] = useState(greetings[0]);
 
   // ----------------------------------------------------
-  // 📥 FIREBASE DATA SYNC
+  // 📥 REAL-TIME XP & STREAK LISTENER
   // ----------------------------------------------------
   useEffect(() => {
-    // 🚨 Listen for Auth State changes to prevent infinite loading!
+    let unsubscribeDoc = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        unsubscribeDoc = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserStats({
+              xp: data.xp || 0,
+              streak: data.streak || 0 // Assuming you have a 'streak' field
+            });
+          }
+        });
+      }
+    });
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeDoc) unsubscribeDoc();
+    };
+  }, []);
+
+  // ----------------------------------------------------
+  // 📥 COURSE PROGRESS LOGIC
+  // ----------------------------------------------------
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user || !batchId) {
         setIsLoading(false);
@@ -48,14 +77,11 @@ export default function QuickStats({ batchId: propBatchId }) {
       
       try {
         const userId = user.uid;
-        
-        // 1. Fetch User Progress
         const progressDoc = await getDoc(doc(db, `batches/${batchId}/user_progress`, userId));
-        const completedIds = progressDoc.exists() ? progressDoc.data().completedItems || [] : [];
+        const rawCompletedIds = progressDoc.exists() ? (progressDoc.data().completedItems || []) : [];
 
-        // 2. Fetch Total Course Items
-        let totalItems = 0;
         let firstUncompletedItem = null;
+        const allCourseItemIds = new Set();
 
         const modulesRef = collection(db, `batches/${batchId}/module`);
         const modSnap = await getDocs(modulesRef);
@@ -71,39 +97,38 @@ export default function QuickStats({ batchId: propBatchId }) {
               getDocs(collection(db, `batches/${batchId}/module/${modDoc.id}/chapters/${chapDoc.id}/exercises`))
             ]);
 
-            const allItems = [...lecSnap.docs, ...artSnap.docs, ...exSnap.docs];
+            const allItemsInChapter = [...lecSnap.docs, ...artSnap.docs, ...exSnap.docs];
+            allItemsInChapter.sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
             
-            // Sort items by creation time to ensure they are in the correct order
-            allItems.sort((a, b) => (a.data().createdAt?.seconds || 0) - (b.data().createdAt?.seconds || 0));
-            
-            totalItems += allItems.length;
-
-            // 🚨 Find the actual NEXT lesson object
-            if (!firstUncompletedItem) {
-              const uncompleted = allItems.find(item => !completedIds.includes(item.id));
-              if (uncompleted) {
-                firstUncompletedItem = { id: uncompleted.id, ...uncompleted.data() };
+            allItemsInChapter.forEach(itemDoc => {
+              allCourseItemIds.add(itemDoc.id);
+              if (!firstUncompletedItem && !rawCompletedIds.includes(itemDoc.id)) {
+                firstUncompletedItem = { id: itemDoc.id, ...itemDoc.data() };
               }
-            }
+            });
           }
         }
 
-        // Calculate final percentage
-        if (totalItems > 0) {
-          setProgress(Math.round((completedIds.length / totalItems) * 100));
-        }
+        const totalItemsCount = allCourseItemIds.size;
+        const validCompletions = rawCompletedIds.filter(id => allCourseItemIds.has(id));
+        const uniqueCompletedCount = new Set(validCompletions).size;
 
-        // Save the next lesson to state
+        if (totalItemsCount > 0) {
+          const calculatedProgress = Math.round((uniqueCompletedCount / totalItemsCount) * 100);
+          setProgress(Math.min(calculatedProgress, 100));
+        } else {
+          setProgress(0);
+        }
         setNextLesson(firstUncompletedItem);
 
       } catch (error) {
         console.error("Failed to fetch quick stats:", error);
       } finally {
-        setIsLoading(false); // Stop the spinner!
+        setIsLoading(false); 
       }
     });
 
-    return () => unsubscribe(); // Cleanup listener on unmount
+    return () => unsubscribe(); 
   }, [batchId]);
 
   // Greeting Randomizer
@@ -121,7 +146,6 @@ export default function QuickStats({ batchId: propBatchId }) {
     navigate(`/lecture-viewer/${batchId}`);
   };
 
-  // 🚨 DYNAMIC THEME CONFIG: Now uses nextLesson.title
   const themeConfig = isFirstTime ? {
     badge: "New Enrollment",
     lessonTitle: nextLesson ? nextLesson.title : "Curriculum Ready",
@@ -132,20 +156,18 @@ export default function QuickStats({ batchId: propBatchId }) {
     shadow: "shadow-rose-500/10"
   } : {
     badge: "Daily Momentum",
-    // If there is no next lesson, they finished the course!
     lessonTitle: nextLesson ? nextLesson.title : "Course Mastered! 🏆",
     cta: nextLesson ? "Resume Journey" : "Review Material",
     icon: <Zap className="text-yellow-200" size={20} fill="currentColor" />,
-    gradient: "from-indigo-600 via-violet-600 to-blue-700",
-    kanji: "進捗",
-    shadow: "shadow-indigo-500/20"
+    gradient: `from-indigo-600 via-violet-600 to-blue-700`,
+    kanji: liveRank.kanji, // 🚨 Use live Kanji from Rank Logic
+    shadow: `shadow-indigo-500/20`
   };
 
   return (
     <section className="w-full">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 lg:gap-12">
         
-        {/* LEFT COLUMN */}
         <div className="flex-1 flex flex-col justify-center min-w-0">
           <AnimatePresence mode="wait">
             <motion.div
@@ -176,16 +198,120 @@ export default function QuickStats({ batchId: propBatchId }) {
             transition={{ delay: 0.4 }}
             className="flex flex-wrap items-center gap-4 md:gap-8"
           >
-            <StatItem icon={<Flame size={16}/>} label="Streak" value="12 Days" color="text-orange-500" />
+            {/* 🚨 UPDATED DYNAMIC STATS */}
+            <StatItem 
+              icon={<Flame size={16}/>} 
+              label="Streak" 
+              value={`${userStats.streak} Days`} 
+              color="text-orange-500" 
+            />
             <div className={`hidden sm:block h-8 w-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
-            <StatItem icon={<Trophy size={16}/>} label="Rank" value="Samurai" color="text-indigo-500" />
+            <StatItem 
+              icon={<Trophy size={16}/>} 
+              label="Rank" 
+              value={liveRank.name} // 🚨 LIVE RANK NAME
+              color="text-indigo-500" 
+              style={{ color: liveRank.color }} // Optional: Dynamic color
+            />
             <div className={`hidden sm:block h-8 w-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}></div>
-            <StatItem icon={<Target size={16}/>} label="Goal" value="80%" color="text-emerald-500" />
+            <StatItem 
+              icon={<Target size={16}/>} 
+              label="XP" 
+              value={userStats.xp.toLocaleString()} 
+              color="text-emerald-500" 
+            />
           </motion.div>
         </div>
 
-        {/* RIGHT COLUMN */}
+        {/* RIGHT COLUMN: PROGRESS CARD */}
         <motion.div
+          initial={{ opacity: 0, x: 15 }}
+          animate={{ opacity: 1, x: 0 }}
+          whileHover={{ y: -5 }}
+          className={`relative w-full lg:w-[380px] h-[440px] rounded-[44px] p-8 overflow-hidden cursor-pointer group flex flex-col justify-between transition-all duration-300 shrink-0 ${themeConfig.shadow}`}
+          style={{ 
+            boxShadow: !isFirstTime ? `0 20px 40px -15px ${liveRank.color}30` : undefined,
+            borderColor: !isFirstTime ? `${liveRank.color}40` : undefined
+          }}
+          onClick={handleResumeJourney}
+        >
+          {/* Card Background Gradient */}
+          <div 
+            className={`absolute inset-0 bg-gradient-to-br ${isFirstTime ? themeConfig.gradient : ''} transition-all duration-1000`}
+            style={{ 
+              background: !isFirstTime ? `linear-gradient(135deg, ${liveRank.color}, #1e1b4b)` : undefined 
+            }}
+          >
+             <motion.div 
+               animate={{ scale: [1, 1.15, 1], rotate: [0, 90, 0] }}
+               transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+               className="absolute -top-16 -right-16 w-64 h-64 bg-white/20 blur-[80px] rounded-full"
+             />
+          </div>
+
+          <div className="relative z-10 flex justify-between items-start">
+            <div className="p-3 bg-white/20 backdrop-blur-3xl rounded-[20px] border border-white/30 shadow-xl">
+              {themeConfig.icon}
+            </div>
+            <div className="px-3 py-1.5 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white">
+                {themeConfig.badge}
+              </span>
+            </div>
+          </div>
+
+          <div className="relative z-10 mt-auto mb-6">
+            <p className="text-white/60 text-[9px] font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+              <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse"></span>
+              {isLoading ? "Syncing Dojo..." : isFirstTime ? "Ready to Deploy" : "Continue Journey"}
+            </p>
+            <h3 className="text-2xl md:text-3xl font-black text-white leading-tight mb-6">
+              {isLoading ? "Loading..." : themeConfig.lessonTitle}
+            </h3>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <span className="text-[9px] font-black text-white/80 uppercase">
+                  {isLoading ? "Calculating..." : isFirstTime ? "Curriculum Synced" : `${progress}% Mastered`}
+                </span>
+              </div>
+              <div className="h-2 w-full bg-black/20 rounded-full overflow-hidden border border-white/10 p-0.5">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: isLoading ? "0%" : isFirstTime ? "20%" : `${progress}%` }}
+                  transition={{ duration: 2, ease: "circOut" }}
+                  className={`h-full ${isFirstTime ? 'bg-rose-300' : 'bg-white'} rounded-full`}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="relative z-10">
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              className="w-full py-4.5 bg-white rounded-[22px] shadow-xl flex items-center justify-center gap-2 transition-all group/btn overflow-hidden relative"
+            >
+              {isLoading ? (
+                <Loader2 className="animate-spin text-indigo-600" size={20} />
+              ) : (
+                <>
+                  <PlayCircle className={isFirstTime ? 'text-rose-600' : 'text-indigo-600'} size={20} fill="currentColor" fillOpacity={0.1}/>
+                  <span className={`text-base font-black tracking-tight ${isFirstTime ? 'text-rose-600' : 'text-indigo-600'}`}>
+                    {themeConfig.cta}
+                  </span>
+                  <ChevronRight className="transition-transform group-hover/btn:translate-x-1 text-slate-400" size={16} strokeWidth={3} />
+                </>
+              )}
+            </motion.button>
+          </div>
+
+          {/* 🚨 DYNAMIC KANJI WATERMARK */}
+          <div className="absolute -right-6 -bottom-12 text-[200px] font-black text-white/[0.05] select-none pointer-events-none transition-transform duration-1000 group-hover:scale-105 group-hover:-rotate-3 italic">
+            {themeConfig.kanji}
+          </div>
+        </motion.div>
+
+        {/* <motion.div
           initial={{ opacity: 0, x: 15 }}
           animate={{ opacity: 1, x: 0 }}
           whileHover={{ y: -5 }}
@@ -259,18 +385,21 @@ export default function QuickStats({ batchId: propBatchId }) {
           <div className="absolute -right-6 -bottom-12 text-[200px] font-black text-white/[0.05] select-none pointer-events-none transition-transform duration-1000 group-hover:scale-105 group-hover:-rotate-3 italic">
             {themeConfig.kanji}
           </div>
-        </motion.div>
+        </motion.div> */}
 
       </div>
     </section>
   );
 }
 
-function StatItem({ icon, label, value, color }) {
+function StatItem({ icon, label, value, color, style }) {
   const { isDarkMode } = useTheme();
   return (
     <div className="flex items-center gap-3 py-1.5 group/stat">
-      <div className={`p-2.5 rounded-xl transition-all group-hover/stat:scale-105 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white shadow-sm border border-slate-100 text-slate-500'} ${color}`}>
+      <div 
+        className={`p-2.5 rounded-xl transition-all group-hover/stat:scale-105 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white shadow-sm border border-slate-100 text-slate-500'}`}
+        style={style}
+      >
         {icon}
       </div>
       <div>

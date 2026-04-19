@@ -4,20 +4,26 @@ import {
   ArrowLeft, MessageSquare, PlayCircle, FileText, HelpCircle, 
   ChevronDown, Download, Send, PlaySquare, CheckCircle2, Clock, 
   PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, 
-  Check, Loader2, Lock, Sun, Moon
+  Check, Loader2, Lock, Sun, Moon, Sparkles, Zap, Star, StarHalf
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // 🚨 FIREBASE IMPORTS
 import { db, auth } from '@services/firebase'; 
-import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, setDoc, writeBatch, increment } from 'firebase/firestore';
 
 export default function LectureViewer() {
   const navigate = useNavigate();
   const { batchId } = useParams(); 
   
   const { isDarkMode, toggleTheme } = useTheme();
+
+  // const [completedItemIds, setCompletedItemIds] = useState([]); 
+const [claimedXPIds, setClaimedXPIds] = useState([]);
+const [showXpDialog, setShowXpDialog] = useState(false);
+const XP_REWARD = 20;
 
   // -- UI State --
   const [isNavOpen, setIsNavOpen] = useState(window.innerWidth >= 1024);
@@ -83,6 +89,7 @@ export default function LectureViewer() {
         const progressDoc = await getDoc(doc(db, `batches/${batchId}/user_progress`, user.uid));
         if (progressDoc.exists()) {
           setCompletedItemIds(progressDoc.data().completedItems || []);
+          setClaimedXPIds(progressDoc.data().claimedXPIds || []);
         }
 
         const modulesRef = collection(db, `batches/${batchId}/module`);
@@ -233,42 +240,95 @@ export default function LectureViewer() {
   // ----------------------------------------------------
   // 4. TOGGLE COMPLETION
   // ----------------------------------------------------
-  const toggleCompletion = async () => {
+const toggleCompletion = async () => {
     if (!activeItem || !auth.currentUser) return;
     const userId = auth.currentUser.uid;
+    const XP_REWARD = 20; // 🚨 Ensure this is defined
     
+    // 1. Check existing status using .includes
     const isCurrentlyCompleted = completedItemIds.includes(activeItem.id);
-    let updatedCompletedIds = [];
+    const hasAlreadyClaimedXP = (claimedXPIds || []).includes(activeItem.id);
 
+    // 2. Determine new states (Using Set to prevent duplicates)
+    let updatedCompletedIds;
     if (isCurrentlyCompleted) {
+      // Remove the ID if it exists
       updatedCompletedIds = completedItemIds.filter(id => id !== activeItem.id);
     } else {
-      updatedCompletedIds = [...completedItemIds, activeItem.id];
+      // 🚨 THE FIX: Use Set to ensure the ID is only added once
+      updatedCompletedIds = Array.from(new Set([...completedItemIds, activeItem.id]));
+    }
+    
+    // XP is only granted if they are completing it for the FIRST time ever
+    const shouldGrantXP = !isCurrentlyCompleted && !hasAlreadyClaimedXP;
+    
+    let updatedClaimedXPIds = (claimedXPIds || []);
+    if (shouldGrantXP) {
+      updatedClaimedXPIds = Array.from(new Set([...updatedClaimedXPIds, activeItem.id]));
     }
 
+    // 3. Optimistic UI Update (Instant feedback)
     setCompletedItemIds(updatedCompletedIds);
+    if (shouldGrantXP) setClaimedXPIds(updatedClaimedXPIds);
 
     try {
+      const batch = writeBatch(db);
       const progressRef = doc(db, `batches/${batchId}/user_progress`, userId);
-      await setDoc(progressRef, { 
+      const userRef = doc(db, 'users', userId);
+
+      // Save progress to database
+      batch.set(progressRef, { 
         completedItems: updatedCompletedIds,
+        claimedXPIds: updatedClaimedXPIds,
         lastUpdated: serverTimestamp()
       }, { merge: true });
+
+      // If eligible, increment global XP
+      if (shouldGrantXP) {
+        batch.update(userRef, { 
+          xp: increment(XP_REWARD) 
+        });
+      }
+
+      await batch.commit();
+      
+      if (shouldGrantXP) {
+        setShowXpDialog(true); // Trigger the pop-up
+      }
     } catch (err) {
       console.error("Failed to save progress:", err);
+      // 🚨 Rollback UI state if the database save fails
+      setCompletedItemIds(completedItemIds);
+      if (shouldGrantXP) setClaimedXPIds(claimedXPIds || []);
     }
   };
 
   // 🚨 UPGRADED: Recalculate progress based on new 3-tier structure
   const courseProgress = useMemo(() => {
     let totalItems = 0;
+    const allCourseItemIds = new Set(); // 🚨 NEW: Track every valid ID in the course
+
+    // 1. Map out all IDs that actually exist in the course right now
     modules.forEach(mod => {
       mod.chapters.forEach(chap => {
-        totalItems += chap.items.length;
+        if (chap.items) {
+          totalItems += chap.items.length;
+          chap.items.forEach(item => allCourseItemIds.add(item.id));
+        }
       });
     });
+
     if (totalItems === 0) return 0;
-    return Math.round((completedItemIds.length / totalItems) * 100);
+
+    // 2. 🚨 THE FIX: Only count an ID if it's COMPLETED AND exists in the current curriculum
+    // This ignores "Zombie IDs" left over in your database from old tests.
+    const validCompletions = completedItemIds.filter(id => allCourseItemIds.has(id));
+    const uniqueCompletedCount = new Set(validCompletions).size;
+
+    // 3. Final calculation
+    const progress = Math.round((uniqueCompletedCount / totalItems) * 100);
+    
+    return Math.min(progress, 100); 
   }, [modules, completedItemIds]);
 
   const videoData = useMemo(() => {
@@ -620,16 +680,31 @@ export default function LectureViewer() {
                 </div>
               </div>
               
-              <button 
-                onClick={toggleCompletion}
-                className={`shrink-0 w-full md:w-auto px-8 py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all active:scale-95
-                  ${isComplete
-                    ? (isDarkMode ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm')
-                    : (isDarkMode ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20' : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-lg shadow-emerald-500/30')}`}
-              >
-                {isComplete ? <Check size={18}/> : <CheckCircle2 size={18}/>}
-                {isComplete ? 'Completed' : 'Mark as Complete'}
-              </button>
+              {/* Find the "Mark as Complete" button in renderMainContent */}
+{/* --- 🚨 UPGRADED GREEN REWARD BUTTON --- */}
+{/* --- 🚨 MINIMALIST EMERALD BUTTON --- */}
+<button 
+  onClick={toggleCompletion}
+  className={`shrink-0 w-full md:w-auto px-8 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95
+    ${isComplete
+      ? (isDarkMode 
+          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+          : 'bg-emerald-50 text-emerald-600 border border-emerald-100')
+      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+    }`}
+>
+  {isComplete ? (
+    <>
+      <Check size={16} strokeWidth={3} />
+      <span>Completed</span>
+    </>
+  ) : (
+    <>
+      <CheckCircle2 size={16} />
+      <span>Mark as Complete</span>
+    </>
+  )}
+</button>
             </div>
             
             <div className={`flex border-b mb-8 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -678,6 +753,57 @@ export default function LectureViewer() {
       {renderNavigation()}
       {renderMainContent()}
       {renderChat()}
+      <AnimatePresence>
+  {showXpDialog && (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+      {/* Backdrop */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={() => setShowXpDialog(false)}
+        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+      />
+
+      {/* Dialog Card */}
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+        className={`relative max-w-sm w-full p-8 rounded-[2.5rem] shadow-2xl text-center border ${
+          isDarkMode ? 'bg-[#151E2E] border-slate-700' : 'bg-white border-slate-200'
+        }`}
+      >
+        {/* Floating Sparkles Icon */}
+        <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+          <Sparkles size={40} className="animate-pulse" />
+        </div>
+
+        <h2 className={`text-2xl font-black mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          Lecture Mastered!
+        </h2>
+        <p className="text-sm text-slate-500 font-bold mb-8 uppercase tracking-widest">
+          Content Completed Successfully
+        </p>
+
+        {/* XP Badge */}
+        <div className={`py-4 rounded-2xl mb-8 flex flex-col items-center justify-center ${
+          isDarkMode ? 'bg-[#0B1121]' : 'bg-slate-50'
+        }`}>
+          <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">XP Reward</span>
+          <span className="text-4xl font-black text-indigo-500">+{XP_REWARD}</span>
+        </div>
+
+        <button 
+          onClick={() => setShowXpDialog(false)}
+          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+        >
+          Got it, Sensei!
+        </button>
+      </motion.div>
+    </div>
+  )}
+</AnimatePresence>
     </div>
   );
 }
