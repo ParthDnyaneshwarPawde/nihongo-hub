@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, HelpCircle, Eye, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, HelpCircle, Eye, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'; 
 
 export default function PostAttemptFeedback({ currentQ, currentState, settings, markHintViewed, setStudentDifficulty, isDarkMode }) {
-  // 🚨 UPGRADE: Safe fallback for the settings prop
   const solutionMode = settings?.solutionMode ?? false;
-  
-  // 🚨 UPGRADE: Local state to handle the accordion toggle
   const [isExpanded, setIsExpanded] = useState(solutionMode);
 
-  // Keep the accordion state in sync if the user toggles the setting or changes questions
   useEffect(() => {
     setIsExpanded(solutionMode);
   }, [solutionMode, currentQ?.id]);
@@ -18,12 +14,27 @@ export default function PostAttemptFeedback({ currentQ, currentState, settings, 
   const isCompleted = currentState.status === 'completed';
   const isFailedFirstTry = currentState.status === 'attempt1_failed';
   
-  // Only show the feedback area if they've completely finished the question OR failed the first try
   if (!isCompleted && !isFailedFirstTry) return null;
 
   return (
     <div className="space-y-4 animate-in slide-in-from-bottom-4 fade-in">
       
+      {/* 🚨 MULTI-CHOICE ORANGE WARNING */}
+      {isCompleted && !currentState.isCorrect && currentState.isPartial && (
+        <div className={`p-4 rounded-2xl border flex items-center gap-3 font-bold text-sm ${isDarkMode ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-orange-50 border-orange-200 text-orange-600'}`}>
+          <AlertTriangle size={20} />
+          Partially Correct: You missed some options or selected incorrect ones.
+        </div>
+      )}
+
+      {/* STANDARD WARNING (Attempt 1 Failed) */}
+      {isFailedFirstTry && (
+        <div className={`p-4 rounded-2xl border flex items-center gap-3 font-bold text-sm ${isDarkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-600'}`}>
+          <AlertTriangle size={20} />
+          Incorrect. Review the question and click "Attempt Again" below for your final try!
+        </div>
+      )}
+
       {/* HINT SYSTEM (Only shows during attempt 1 failed) */}
       {currentQ.hint && isFailedFirstTry && !currentState.hintViewed && (
         <button onClick={() => markHintViewed(currentQ.id)} className="w-full p-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-600 font-bold text-sm hover:bg-cyan-500/20 transition-colors">
@@ -42,7 +53,6 @@ export default function PostAttemptFeedback({ currentQ, currentState, settings, 
       {isCompleted && (
         <div className={`border rounded-3xl overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-indigo-100 shadow-xl shadow-indigo-100/50'}`}>
           
-          {/* 🚨 UPGRADE: Collapsible Solution Logic */}
           {!isExpanded ? (
             <button 
               onClick={() => setIsExpanded(true)}
@@ -57,7 +67,6 @@ export default function PostAttemptFeedback({ currentQ, currentState, settings, 
                 <h4 className="flex items-center gap-2 text-indigo-500 font-black tracking-widest uppercase text-[10px]">
                   <AlertCircle size={16} /> Official Solution
                 </h4>
-                {/* Allow them to collapse it again unless Solution Mode forces it open */}
                 {!solutionMode && (
                   <button onClick={() => setIsExpanded(false)} className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-500 hover:bg-slate-700' : 'text-slate-400 hover:bg-slate-100'}`}>
                     <ChevronUp size={16} />
@@ -72,7 +81,6 @@ export default function PostAttemptFeedback({ currentQ, currentState, settings, 
           )}
 
           {/* STUDENT DIFFICULTY RATING */}
-          {/* 🚨 UPGRADE: Separated from the solution box so they can ALWAYS rate it, even if the solution is collapsed */}
           <div className={`px-6 py-5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-100 bg-slate-50/50'}`}>
             <p className="text-xs font-bold text-slate-500 mb-3">How difficult was this for you?</p>
             <div className="flex gap-2">

@@ -18,7 +18,8 @@ export function useExamSession(questions) {
           wasSkippedInitially: false,
           revisited: false,
           attempts: [],
-          userNote: '' // 🚨 THE FIX: Initialize the note string so React tracks it immediately
+          userNote: '', // 🚨 THE FIX: Initialize the note string so React tracks it immediately
+          isSecondAttempt: false // 🚨 NEW: Initialize the attempt tracker cleanly
         }
       };
     });
@@ -40,7 +41,8 @@ export function useExamSession(questions) {
       // This prevents "Cannot read properties of undefined"
       if (!state) return prev; 
 
-      if (state.status === 'completed') return prev; 
+      // 🚨 THE FIX: Block clicks if completed OR waiting for a retry!
+      if (state.status === 'completed' || state.status === 'attempt1_failed') return prev; 
 
       let newSelection = [];
       

@@ -4,8 +4,7 @@ import { db, auth } from '@services/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, writeBatch, collection } from 'firebase/firestore';
 import { useTheme } from '@/context/ThemeContext'; 
 import { motion, AnimatePresence } from 'framer-motion';
-// 🚨 UPGRADE: Removed Edit3, added StickyNote and X for the new Dialog
-import { AlertTriangle, CheckCircle2, Info, Lightbulb, Save, MessageSquare, StickyNote, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Lightbulb, Save, MessageSquare, StickyNote, X, Edit3 } from 'lucide-react';
 
 import { useExamSession } from './hooks/useExamSession';
 import { useExamTelemetry } from './hooks/useExamTelemetry';
@@ -69,15 +68,24 @@ export default function ExamEngine() {
   const [questions, setQuestions] = useState([]);
   
   const [timeSpent, setTimeSpent] = useState(0); 
-  const [totalTimeSpent, setTotalTimeSpent] = useState(0); 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNextLoading, setIsNextLoading] = useState(false);
 
-  // 🚨 NEW: State for the Notes Dialog
   const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [localNote, setLocalNote] = useState(""); 
 
   const session = useExamSession(questions);
-  const timeSpentRef = useRef({});
+
+  const [totalTimeSpent, setTotalTimeSpent] = useState(() => {
+    const savedTimer = localStorage.getItem(`exam_timer_${exerciseId}`);
+    return savedTimer ? JSON.parse(savedTimer).total : 0;
+  });
+
+  const timeSpentRef = useRef(
+    localStorage.getItem(`exam_timer_${exerciseId}`) 
+      ? JSON.parse(localStorage.getItem(`exam_timer_${exerciseId}`)).perQuestion 
+      : {}
+  );
 
   const [proctorWarning, setProctorWarning] = useState(null);
   const [violationCount, setViolationCount] = useState(0);
@@ -96,6 +104,21 @@ export default function ExamEngine() {
   useEffect(() => {
     localStorage.setItem('nihongo_settings', JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    if (exerciseId) {
+      const saved = localStorage.getItem(`exam_draft_${exerciseId}`);
+      if (saved) {
+        session.setQuestionStates(JSON.parse(saved));
+      }
+    }
+  }, [exerciseId, session.setQuestionStates]);
+
+  useEffect(() => {
+    if (Object.keys(session.questionStates).length > 0) {
+      localStorage.setItem(`exam_draft_${exerciseId}`, JSON.stringify(session.questionStates));
+    }
+  }, [session.questionStates, exerciseId]);
 
   const handleViolation = useCallback((type, count) => {
     setViolationCount(count);
@@ -130,12 +153,15 @@ export default function ExamEngine() {
         
         const formattedQuestions = questionSnaps.filter(snap => snap.exists()).map(snap => {
           const q = snap.data();
+          
+          const safeType = (q.type || '').toLowerCase();
+
           return {
             ...q, 
-            type: q.type, 
+            type: safeType, 
             prompt: q.promptText || '', 
             mediaType: q.mediaUrl ? (q.mediaUrl.endsWith('.mp3') ? 'audio' : 'video') : 'none',
-            correctOptions: q.type.includes('choice') ? (q.options?.filter(o => o.isCorrect).map(o => o.id) || []) : (q.correctAnswers || q.correctOptions || []), 
+            correctOptions: safeType.includes('choice') ? (q.options?.filter(o => o.isCorrect === true || o.isCorrect === 'true').map(o => o.id) || []) : (q.correctAnswers || q.correctOptions || []), 
             options: q.options || [], 
             explanation: q.officialSolution?.text || "No explanation provided.",
             hint: q.hintText || q.hint || q.hint_text || "" 
@@ -159,18 +185,28 @@ export default function ExamEngine() {
   useEffect(() => {
     let timer;
     const isFinished = session.currentState?.status === 'completed';
-    if (examState === 'active' && isTimerRunning && !isFinished) {
+    const isWaitingForRetry = session.currentState?.status === 'attempt1_failed';
+    
+    if (examState === 'active' && isTimerRunning && !isFinished && !isWaitingForRetry) {
       timer = setInterval(() => { 
         setTimeSpent(p => {
           const newTime = p + 1;
           if (session.currentQ) timeSpentRef.current[session.currentQ.id] = newTime;
           return newTime;
         }); 
-        setTotalTimeSpent(p => p + 1); 
+        
+        setTotalTimeSpent(p => {
+          const newTotal = p + 1;
+          localStorage.setItem(`exam_timer_${exerciseId}`, JSON.stringify({
+            total: newTotal,
+            perQuestion: timeSpentRef.current
+          }));
+          return newTotal;
+        }); 
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [session.currentIndex, session.currentState?.status, examState, isTimerRunning, session.currentQ]);
+  }, [session.currentIndex, session.currentState?.status, examState, isTimerRunning, session.currentQ, exerciseId]);
 
   const handleInteraction = () => {
     if (!isTimerRunning && examState === 'active') {
@@ -183,37 +219,121 @@ export default function ExamEngine() {
     session.toggleOption(optionId, isMulti);
   };
 
+  // 🚨 COMPLETELY UPGRADED: Fixes Text Matching, Fixes DB Saving, Fixes Syntax Error
   const handleCheck = (manualValue = null) => {
+    // --- 🚨 THE CRASH FIX (EVENT OBJECT SHIELD) ---
+    // If a button click passes a React Mouse Event, destroy it so it doesn't break localStorage!
+    if (manualValue && typeof manualValue === 'object' && 'nativeEvent' in manualValue) {
+      manualValue = null;
+    }
+
     handleInteraction(); 
     const { currentQ, currentState, setQuestionStates, setScore } = session;
     
-    if (!currentState || currentState.status === 'completed') return;
+    if (!currentState || currentState.status === 'completed' || currentState.status === 'attempt1_failed') return;
 
-    const correctOption = currentQ.options.find(o => o.isCorrect);
-    const isCorrect = manualValue 
-      ? manualValue === correctOption?.text 
-      : currentState.selectedOptions.includes(correctOption?.text);
+    let isCorrect = false;
+    let isPartial = false; 
+    let rawResponse = manualValue !== null ? [manualValue] : currentState.selectedOptions;
 
+    // --- 1. SMART CHECKING LOGIC ---
+    if (currentQ.type.includes('choice')) {
+      const correctIds = currentQ.correctOptions || [];
+      const selectedIds = currentState.selectedOptions || [];
+
+      if (currentQ.type.includes('multi') || currentQ.type.includes('multiple')) {
+        isCorrect = correctIds.length === selectedIds.length && correctIds.every(id => selectedIds.includes(id));
+        const hasSomeCorrect = selectedIds.some(id => correctIds.includes(id));
+        const missedSome = correctIds.some(id => !selectedIds.includes(id));
+        if (!isCorrect && (hasSomeCorrect || missedSome)) {
+          isPartial = true; 
+        }
+      } else {
+        isCorrect = correctIds.includes(selectedIds[0]);
+      }
+    } else {
+      // THE TEXT FIX: Sanitize both inputs to ignore cases and spaces
+      const userInput = (manualValue !== null ? manualValue : currentState.selectedOptions[0] || "").toString().trim().toLowerCase();
+      const correctList = (currentQ.correctOptions || []).map(ans => ans.toString().trim().toLowerCase());
+      const fallback = currentQ.options?.find(o => o.isCorrect)?.text?.toString().trim().toLowerCase();
+
+      isCorrect = correctList.includes(userInput) || (!!fallback && userInput === fallback);
+      rawResponse = [userInput]; // Standardize for the DB
+    }
+
+    // --- 2. ATTEMPT RECORDER (THE DB FIX) ---
+    const newAttempt = {
+      responseId: Math.random().toString(36).substring(2, 9), // Unique ID for Firestore
+      response: rawResponse,
+      isCorrect: isCorrect,
+      timestamp: Date.now()
+    };
+
+    // --- 3. STATE UPDATE ---
     if (isCorrect) {
       if (settings.playSounds) playAudioFeedback(true);
       setQuestionStates(prev => ({
         ...prev,
-        [currentQ.id]: { ...prev[currentQ.id], status: 'completed', isCorrect: true }
+        [currentQ.id]: { 
+          ...prev[currentQ.id], 
+          status: 'completed', 
+          isCorrect: true, 
+          isPartial: false,
+          attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
+        }
       }));
       setScore(s => s + currentQ.points);
-    } else if (currentQ.secondAttempt && currentState.status !== 'attempt1_failed') {
+    } else if (currentQ.secondAttempt && !currentState.isSecondAttempt && currentState.status !== 'attempt1_failed') {
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
         ...prev,
-        [currentQ.id]: { ...prev[currentQ.id], status: 'attempt1_failed' }
+        [currentQ.id]: { 
+          ...prev[currentQ.id], 
+          status: 'attempt1_failed', 
+          isPartial,
+          attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
+        }
       }));
     } else {
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
         ...prev,
-        [currentQ.id]: { ...prev[currentQ.id], status: 'completed', isCorrect: false }
+        [currentQ.id]: { 
+          ...prev[currentQ.id], 
+          status: 'completed', 
+          isCorrect: false, 
+          isPartial,
+          attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
+        }
       }));
     }
+  };
+
+  const handleAttemptAgain = () => {
+    session.setQuestionStates(prev => ({
+      ...prev,
+      [session.currentQ.id]: {
+        ...prev[session.currentQ.id],
+        status: 'idle',
+        isSecondAttempt: true, 
+        selectedOptions: [] 
+      }
+    }));
+    setIsTimerRunning(true); 
+  };
+
+  const handleShowAnswer = () => {
+    if (settings.playSounds) playAudioFeedback(false);
+    session.setQuestionStates(prev => ({
+      ...prev,
+      [session.currentQ.id]: {
+        ...prev[session.currentQ.id],
+        status: 'completed',
+        isCorrect: false, 
+        isPartial: false,
+        selectedOptions: [] 
+      }
+    }));
   };
 
   const handleNext = async () => {
@@ -245,10 +365,20 @@ export default function ExamEngine() {
   };
 
   const handlePrevious = () => {
-    if (session.currentState.status === 'idle') session.skipQuestion(session.currentQ.id);
+    const currentId = session.currentQ?.id;
+    if (!currentId) return;
+
+    if (session.currentState?.status === 'idle') {
+      session.skipQuestion(currentId);
+    }
+
     if (session.currentIndex > 0) {
+      session.setQuestionStates(prev => ({ 
+        ...prev, 
+        [currentId]: { ...prev[currentId], revisited: true } 
+      }));
+
       session.setCurrentIndex(p => p - 1);
-      session.setQuestionStates(prev => ({ ...prev, [session.currentQ.id]: { ...prev[session.currentQ.id], revisited: true } }));
     }
   };
 
@@ -279,22 +409,41 @@ export default function ExamEngine() {
         const qState = session.questionStates[q.id];
         const questionDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id);
         
-        if (!qState || qState.attempts.length === 0) {
-          batch.set(questionDocRef, { questionId: q.id, status: 'skipped_or_unattempted', topic: q.topic || 'Uncategorized', lastUpdated: serverTimestamp() }, { merge: true });
+        if (!qState || !qState.attempts || qState.attempts.length === 0) {
+          batch.set(questionDocRef, { 
+            questionId: q.id, 
+            status: 'skipped_or_unattempted', 
+            topic: q.topic || 'Uncategorized', 
+            userNote: qState?.userNote || "", 
+            lastUpdated: serverTimestamp() 
+          }, { merge: true });
           return;
         }
 
-        batch.set(questionDocRef, { questionId: q.id, lastUpdated: serverTimestamp() }, { merge: true });
+        batch.set(questionDocRef, { 
+          questionId: q.id, 
+          userNote: qState.userNote || "", 
+          lastUpdated: serverTimestamp() 
+        }, { merge: true });
 
         qState.attempts.forEach((attempt) => {
-          const finalAttemptData = { ...attempt, studentDifficulty: qState.studentDifficulty || 'unrated', userNote: qState.userNote || "", responseTime: serverTimestamp() };
+          const finalAttemptData = { 
+            ...attempt, 
+            studentDifficulty: qState.studentDifficulty || 'unrated', 
+            userNote: qState.userNote || "", 
+            responseTime: serverTimestamp() 
+          };
           const attemptDocRef = doc(db, 'engine_logs', exerciseId, 'questions', q.id, 'attempts', attempt.responseId);
           batch.set(attemptDocRef, finalAttemptData);
         });
       });
 
       await batch.commit();
-      console.log("✅ Deep Logs Saved Successfully");
+      
+      localStorage.removeItem(`exam_draft_${exerciseId}`); 
+      localStorage.removeItem(`exam_timer_${exerciseId}`); 
+      
+      console.log("✅ Deep Logs, Timers, & Notes Saved Successfully");
 
     } catch (err) {
       console.error("❌ Failed to save deep analytics:", err);
@@ -302,14 +451,19 @@ export default function ExamEngine() {
   };
 
   const handleSaveUserNote = (noteText) => {
-  session.setQuestionStates(prev => ({
-    ...prev,
-    [session.currentQ.id]: {
-      ...prev[session.currentQ.id],
-      userNote: noteText // 🚨 This saves it to local React state
-    }
-  }));
-};
+    session.setQuestionStates(prev => ({
+      ...prev,
+      [session.currentQ.id]: {
+        ...prev[session.currentQ.id],
+        userNote: noteText
+      }
+    }));
+  };
+
+  const closeAndSaveNote = () => {
+    handleSaveUserNote(localNote);
+    setIsNotesOpen(false);
+  };
 
   if (examState === 'loading') return <div className="h-screen w-full flex items-center justify-center"><p>Loading Engine...</p></div>;
   if (examState === 'intro') return <ExamIntro examConfig={examConfig} totalQuestions={questions.length} onStart={() => setExamState('active')} isDarkMode={isDarkMode} />;
@@ -339,13 +493,12 @@ export default function ExamEngine() {
   return (
     <div className={`h-screen w-full flex flex-col font-sans select-none overflow-hidden transition-colors duration-500 relative ${isDarkMode ? 'bg-[#0B1121] text-slate-200' : 'bg-slate-50 text-slate-800'}`}>
 
-      {/* 🚨 NEW: Personal Notes Dialog */}
       <AnimatePresence>
         {isNotesOpen && (
           <div className="absolute inset-0 z-[150] flex items-center justify-center px-4">
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setIsNotesOpen(false)}
+              onClick={closeAndSaveNote} 
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             />
             <motion.div 
@@ -366,16 +519,16 @@ export default function ExamEngine() {
                     <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Stored for this question</p>
                   </div>
                 </div>
-                <button onClick={() => setIsNotesOpen(false)} className="p-2 hover:bg-slate-500/10 rounded-xl transition-colors">
+                <button onClick={closeAndSaveNote} className="p-2 hover:bg-slate-500/10 rounded-xl transition-colors">
                   <X size={20} />
                 </button>
               </div>
 
               <textarea
                 autoFocus
-                value={session.currentState?.userNote || ''}
-                onChange={(e) => handleSaveUserNote(e.target.value)}
-                placeholder="Type your mnemonics, grammar rules, or reminders here... Refreshing the browser without submitting text will delete this note."
+                value={localNote}
+                onChange={(e) => setLocalNote(e.target.value)}
+                placeholder="Type your mnemonics, grammar rules, or reminders here..."
                 className={`w-full min-h-[200px] p-5 rounded-2xl border-2 outline-none transition-all text-sm leading-relaxed resize-none ${
                   isDarkMode 
                     ? 'bg-[#0B1121] border-slate-700 focus:border-indigo-500 text-slate-200' 
@@ -385,7 +538,7 @@ export default function ExamEngine() {
 
               <div className="mt-6 flex justify-end">
                 <button 
-                  onClick={() => setIsNotesOpen(false)}
+                  onClick={closeAndSaveNote}
                   className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-600/20"
                 >
                   Save & Close
@@ -506,7 +659,6 @@ export default function ExamEngine() {
         )}
       </AnimatePresence>
 
-      {/* 🚨 UPGRADE: Passed onOpenNotes and hasAttempted to ExamHeader */}
       <ExamHeader 
         examConfig={examConfig} 
         currentQ={session.currentQ} 
@@ -520,8 +672,11 @@ export default function ExamEngine() {
         onExit={() => finishExam()} 
         isTimerRunning={isTimerRunning}
         onStartTimer={() => setIsTimerRunning(true)}
-        onOpenNotes={() => setIsNotesOpen(true)}
-        hasAttempted={settings.showMyNote && (session.currentState?.status !== 'idle' || !!session.currentState?.userNote)}
+        onOpenNotes={() => {
+          setLocalNote(session.currentState?.userNote || "");
+          setIsNotesOpen(true);
+        }}
+        hasAttempted={settings.showMyNote}
       />
       
       <main className="flex-1 overflow-y-auto p-4 lg:p-10 flex flex-col items-center">
@@ -549,6 +704,8 @@ export default function ExamEngine() {
         onPrevious={handlePrevious} 
         onCheck={handleCheck} 
         onNext={handleNext} 
+        onAttemptAgain={handleAttemptAgain} 
+        onShowAnswer={handleShowAnswer}
         isNextLoading={isNextLoading}
         isDarkMode={isDarkMode} 
         hasHint={settings.showHint && !!session.currentQ?.hint}

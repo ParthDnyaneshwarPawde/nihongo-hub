@@ -1,8 +1,9 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, Lightbulb, Trash2, CheckCircle2, Loader2 } from 'lucide-react'; 
+import { ChevronLeft, ChevronRight, Lightbulb, Trash2, CheckCircle2, Loader2, RotateCcw, Eye } from 'lucide-react'; 
 
-export default function ExamFooter({ currentIndex, totalQuestions, currentState, onPrevious, onCheck, onNext, isNextLoading, onClear, hasHint, onShowHint, isDarkMode }) { 
+export default function ExamFooter({ currentIndex, totalQuestions, currentState, onPrevious, onCheck, onNext, isNextLoading, onClear, hasHint, onShowHint, isDarkMode, onAttemptAgain, onShowAnswer }) { 
   const canAttempt = currentState?.status !== 'completed';
+  const isAttempt1Failed = currentState?.status === 'attempt1_failed';
   const hasSelection = currentState?.selectedOptions?.length > 0;
 
   return (
@@ -34,7 +35,7 @@ export default function ExamFooter({ currentIndex, totalQuestions, currentState,
         )}
 
         {/* Clear Response Button */}
-        {canAttempt && hasSelection && (
+        {canAttempt && !isAttempt1Failed && hasSelection && (
           <button 
             onClick={onClear} 
             disabled={isNextLoading}
@@ -46,8 +47,31 @@ export default function ExamFooter({ currentIndex, totalQuestions, currentState,
           </button>
         )}
 
-        {/* Check Answer Button */}
-        {canAttempt && (
+        {/* Check Answer OR Attempt Again Block */}
+        {isAttempt1Failed ? (
+          <div className="flex items-center gap-2">
+            {/* 🚨 NEW: Show Answer Button */}
+            <button 
+              onClick={onShowAnswer} 
+              disabled={isNextLoading} 
+              className={`px-4 sm:px-6 py-3.5 rounded-xl font-black text-sm transition-all active:scale-95 flex items-center gap-2 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              title="Give up and show the answer"
+            >
+              <Eye size={18} className="sm:hidden" />
+              <span className="hidden sm:inline">Show Answer</span>
+            </button>
+
+            <button 
+              onClick={onAttemptAgain} 
+              disabled={isNextLoading} 
+              className="px-4 sm:px-8 py-3.5 rounded-xl font-black text-sm transition-all active:scale-95 bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/20 flex items-center gap-2"
+            >
+              <RotateCcw size={18} className="sm:hidden" />
+              <span className="hidden sm:inline">Attempt Again</span>
+              <span className="sm:hidden">Retry</span>
+            </button>
+          </div>
+        ) : canAttempt ? (
           <button 
             onClick={onCheck} 
             disabled={!hasSelection || isNextLoading} 
@@ -57,9 +81,9 @@ export default function ExamFooter({ currentIndex, totalQuestions, currentState,
             <span className="hidden sm:inline">Check Answer</span>
             <span className="sm:hidden">Check</span>
           </button>
-        )}
+        ) : null}
 
-        {/* Next/Finish Button: 🚨 Upgraded with Spinner */}
+        {/* Next/Finish Button */}
         <button 
           onClick={onNext} 
           disabled={isNextLoading}

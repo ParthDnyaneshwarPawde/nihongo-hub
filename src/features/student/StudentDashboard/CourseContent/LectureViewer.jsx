@@ -27,8 +27,11 @@ export default function LectureViewer() {
   
   // -- Content State --
   const [courseTitle, setCourseTitle] = useState("Loading Course...");
-  const [chapters, setChapters] = useState([]);
+  const [modules, setModules] = useState([]); // 🚨 UPGRADED: Replaced flat chapters with nested modules
   const [activeItem, setActiveItem] = useState(null);
+  
+  // -- Expansion States --
+  const [expandedModules, setExpandedModules] = useState([]); // 🚨 NEW
   const [expandedChapters, setExpandedChapters] = useState([]);
   
   // -- Interactive State --
@@ -37,7 +40,7 @@ export default function LectureViewer() {
   const [completedItemIds, setCompletedItemIds] = useState([]); 
 
   // ----------------------------------------------------
-  // 1. 📥 FETCH CURRICULUM & SECURITY BOUNCER
+  // 1. 📥 FETCH CURRICULUM (🚨 UPGRADED TO 3-TIER HIERARCHY & STRICT ORDER SORTING)
   // ----------------------------------------------------
   useEffect(() => {
     const fetchFullCourse = async () => {
@@ -85,7 +88,7 @@ export default function LectureViewer() {
         const modulesRef = collection(db, `batches/${batchId}/module`);
         const modSnap = await getDocs(modulesRef);
         
-        let loadedChapters = [];
+        let loadedModules = [];
 
         for (const modDoc of modSnap.docs) {
           const modData = modDoc.data();
@@ -93,6 +96,7 @@ export default function LectureViewer() {
 
           const chaptersRef = collection(db, `batches/${batchId}/module/${modId}/chapters`);
           const chapSnap = await getDocs(chaptersRef);
+          let loadedChapters = [];
 
           for (const chapDoc of chapSnap.docs) {
             const chapData = chapDoc.data();
@@ -108,23 +112,44 @@ export default function LectureViewer() {
             const exSnap = await getDocs(collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`));
             exSnap.forEach(d => items.push({ id: d.id, type: 'quiz', ...d.data(), modId, chapId }));
 
-            items.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+            // 🚨 SORT LEVEL 3: Items by order
+            items.sort((a, b) => (a.order ?? a.createdAt?.seconds ?? 0) - (b.order ?? b.createdAt?.seconds ?? 0));
 
             loadedChapters.push({
               id: chapId,
-              title: `${modData.name || 'Module'} - ${chapData.chapterName || 'Chapter'}`,
-              isModLocked: modData.isLocked ?? false, 
-              isChapLocked: chapData.isLocked ?? false, 
+              title: chapData.chapterName || chapData.title || 'Chapter',
+              isLocked: chapData.isLocked ?? false, 
+              order: chapData.order || 0, // Fallback for safety
               items: items
             });
           }
+
+          // 🚨 SORT LEVEL 2: Chapters by order
+          loadedChapters.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+          loadedModules.push({
+            id: modId,
+            title: modData.name || 'Module',
+            isLocked: modData.isLocked ?? false,
+            order: modData.order || 0, // Fallback for safety
+            chapters: loadedChapters
+          });
         }
 
-        setChapters(loadedChapters);
+        // 🚨 SORT LEVEL 1: Modules by order
+        loadedModules.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-        if (loadedChapters.length > 0 && loadedChapters[0].items.length > 0) {
-          setActiveItem(loadedChapters[0].items[0]);
-          setExpandedChapters([loadedChapters[0].id]);
+        setModules(loadedModules);
+
+        // Auto-expand and select first item
+        if (loadedModules.length > 0) {
+          setExpandedModules([loadedModules[0].id]);
+          if (loadedModules[0].chapters.length > 0) {
+            setExpandedChapters([loadedModules[0].chapters[0].id]);
+            if (loadedModules[0].chapters[0].items.length > 0) {
+              setActiveItem(loadedModules[0].chapters[0].items[0]);
+            }
+          }
         }
 
       } catch (error) {
@@ -138,27 +163,22 @@ export default function LectureViewer() {
   }, [batchId, navigate]);
 
   // ----------------------------------------------------
-  // 2. LIVE FETCH Q&A (🚨 FIXED INSTANT REFRESH & ISOLATION)
+  // 2. LIVE FETCH Q&A
   // ----------------------------------------------------
   useEffect(() => {
     if (!batchId || !activeItem?.id) return;
 
-    // 🚨 1. Clear old comments immediately when switching videos
     setComments([]); 
 
     const qnaRef = collection(db, `batches/${batchId}/qna`);
-    
-    // 🚨 2. Pure Where Query (Bypasses Firebase Index limits)
     const q = query(qnaRef, where('itemId', '==', activeItem.id));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let fetchedComments = [];
       
       snapshot.forEach(doc => {
-        // 🚨 3. ESTIMATE FIX: Makes chat appear instantly!
         const data = doc.data({ serverTimestamps: 'estimate' }); 
         
-        // 🚨 4. Strict UI Isolation Check
         if (data.itemId === activeItem.id) {
           let timeString = "Just now";
           let timestampVal = 0;
@@ -173,9 +193,7 @@ export default function LectureViewer() {
         }
       });
 
-      // 🚨 5. Manual JavaScript Sort (Desc)
       fetchedComments.sort((a, b) => b._sortTime - a._sortTime);
-
       setComments(fetchedComments);
     });
 
@@ -241,12 +259,17 @@ export default function LectureViewer() {
     }
   };
 
+  // 🚨 UPGRADED: Recalculate progress based on new 3-tier structure
   const courseProgress = useMemo(() => {
     let totalItems = 0;
-    chapters.forEach(chap => totalItems += chap.items.length);
+    modules.forEach(mod => {
+      mod.chapters.forEach(chap => {
+        totalItems += chap.items.length;
+      });
+    });
     if (totalItems === 0) return 0;
     return Math.round((completedItemIds.length / totalItems) * 100);
-  }, [chapters, completedItemIds]);
+  }, [modules, completedItemIds]);
 
   const videoData = useMemo(() => {
     if (activeItem?.type !== 'video') return null;
@@ -269,6 +292,11 @@ export default function LectureViewer() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // UI Toggles
+  const toggleModule = (id) => {
+    setExpandedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+  };
 
   const toggleChapter = (id) => {
     setExpandedChapters(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
@@ -293,6 +321,7 @@ export default function LectureViewer() {
     );
   }
 
+  // 🚨 UPGRADED NAVIGATION RENDER (3-TIER HIERARCHY)
   const renderNavigation = () => (
     <>
       {isNavOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden" onClick={() => setIsNavOpen(false)} />}
@@ -300,7 +329,6 @@ export default function LectureViewer() {
       <aside className={`fixed lg:relative inset-y-0 left-0 z-50 flex shrink-0 transition-all duration-300 ease-in-out shadow-2xl lg:shadow-none
         ${isNavOpen ? 'translate-x-0 lg:w-[320px]' : '-translate-x-full lg:translate-x-0 lg:w-0 overflow-hidden'}`}>
         
-        {/* 🚨 PREMIUM LIGHT MODE STYLING */}
         <div className={`w-[300px] lg:w-[320px] h-full flex flex-col border-r shrink-0 ${isDarkMode ? 'bg-[#0B1121] border-slate-800' : 'bg-white/80 backdrop-blur-xl border-slate-200/60 shadow-sm z-10'}`}>
           <div className={`p-6 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100/80 bg-gradient-to-b from-slate-50/50 to-transparent'}`}>
             <h2 className={`font-black text-lg mb-2 truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{courseTitle}</h2>
@@ -313,60 +341,95 @@ export default function LectureViewer() {
           </div>
 
           <div className={`flex-1 overflow-y-auto custom-scrollbar ${isDarkMode ? '' : 'bg-slate-50/20'}`}>
-            {chapters.map((chap, idx) => {
-              const isParentLocked = chap.isModLocked || chap.isChapLocked;
+            {modules.map((mod, modIdx) => {
+              const isModLocked = mod.isLocked;
 
               return (
-              <div key={chap.id} className={`border-b ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'}`}>
+              <div key={mod.id} className={`border-b ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'}`}>
                 
+                {/* MODULE HEADER (SECTION) */}
                 <button 
-                  onClick={() => !isParentLocked && toggleChapter(chap.id)} 
+                  onClick={() => !isModLocked && toggleModule(mod.id)} 
                   className={`w-full p-4 flex items-center justify-between transition-colors 
-                    ${isParentLocked ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-indigo-50/30 bg-transparent'}`}
+                    ${isModLocked ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-indigo-50/30 bg-transparent'}`}
                 >
                   <div className="text-left flex items-center gap-3">
-                    {isParentLocked && <Lock size={16} className="text-rose-500" />}
+                    {isModLocked && <Lock size={16} className="text-rose-500" />}
                     <div>
-                      <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-indigo-500' : 'text-indigo-500'}`}>Section {idx + 1}</span>
-                      <h3 className={`font-bold text-sm mt-0.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{chap.title}</h3>
+                      <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-indigo-500' : 'text-indigo-600'}`}>Section {modIdx + 1}</span>
+                      <h3 className={`font-bold text-sm mt-0.5 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{mod.title}</h3>
                     </div>
                   </div>
-                  {!isParentLocked && <ChevronDown size={18} className={`transition-transform duration-300 ${expandedChapters.includes(chap.id) ? 'rotate-180 text-indigo-500' : (isDarkMode ? 'text-slate-500' : 'text-slate-300')}`} />}
+                  {!isModLocked && <ChevronDown size={18} className={`transition-transform duration-300 ${expandedModules.includes(mod.id) ? 'rotate-180 text-indigo-500' : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`} />}
                 </button>
 
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedChapters.includes(chap.id) ? 'max-h-[800px]' : 'max-h-0'}`}>
-                  <div className={`py-2 ${isDarkMode ? 'bg-black/20' : 'bg-slate-50/50 shadow-inner border-y border-slate-100/50'}`}>
-                    {chap.items.map(item => {
-                      const isActive = activeItem?.id === item.id;
-                      const isComplete = completedItemIds.includes(item.id);
-                      const isItemLocked = isParentLocked || item.isLocked;
+                {/* CHAPTERS CONTAINER */}
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedModules.includes(mod.id) ? 'max-h-[1500px]' : 'max-h-0'}`}>
+                  <div className={`pb-2 ${isDarkMode ? 'bg-black/20' : 'bg-slate-50/50 shadow-inner'}`}>
+                    
+                    {mod.chapters.map((chap, chapIdx) => {
+                      const isChapLocked = isModLocked || chap.isLocked;
 
                       return (
-                        <button 
-                          key={item.id} 
-                          onClick={() => { if (!isItemLocked) handleItemClick(item); }}
-                          disabled={isItemLocked}
-                          className={`w-full p-3 pl-6 flex items-start gap-3 transition-all text-left
-                            ${isItemLocked ? 'opacity-40 cursor-not-allowed grayscale' : ''}
-                            ${isActive ? (isDarkMode ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'bg-gradient-to-r from-indigo-50 to-white border-l-4 border-indigo-600 shadow-sm') : 'border-l-4 border-transparent hover:bg-slate-800/20 dark:hover:bg-slate-800/30 hover:border-slate-200 dark:hover:border-transparent'}`}
-                        >
-                          <div className="mt-0.5 shrink-0 transition-colors">
-                            {isItemLocked ? <Lock size={16} className="text-rose-500" />
-                              : isComplete ? <CheckCircle2 size={16} className="text-emerald-500" />
-                              : item.type === 'video' ? <PlaySquare size={16} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
-                              : item.type === 'article' ? <FileText size={16} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
-                              : <HelpCircle size={16} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
-                            }
+                        <div key={chap.id} className="w-full">
+                          
+                          {/* CHAPTER HEADER */}
+                          <button 
+                            onClick={() => !isChapLocked && toggleChapter(chap.id)} 
+                            className={`w-full py-3 px-4 pl-6 flex items-center justify-between transition-colors border-l-2 border-transparent
+                              ${isChapLocked ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-indigo-50/20'}`}
+                          >
+                            <div className="text-left flex items-center gap-2">
+                              {isChapLocked && <Lock size={14} className="text-rose-500" />}
+                              <div>
+                                <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Chapter {chapIdx + 1}</span>
+                                <h4 className={`font-bold text-xs mt-0.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{chap.title}</h4>
+                              </div>
+                            </div>
+                            {!isChapLocked && <ChevronDown size={16} className={`transition-transform duration-300 ${expandedChapters.includes(chap.id) ? 'rotate-180 text-indigo-400' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`} />}
+                          </button>
+
+                          {/* ITEMS CONTAINER */}
+                          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedChapters.includes(chap.id) ? 'max-h-[800px]' : 'max-h-0'}`}>
+                            <div className={`pb-2 pt-1 ${isDarkMode ? 'bg-black/40' : 'bg-slate-100/30 border-y border-slate-100/50'}`}>
+                              {chap.items.map(item => {
+                                const isActive = activeItem?.id === item.id;
+                                const isComplete = completedItemIds.includes(item.id);
+                                const isItemLocked = isChapLocked || item.isLocked;
+
+                                return (
+                                  <button 
+                                    key={item.id} 
+                                    onClick={() => { if (!isItemLocked) handleItemClick(item); }}
+                                    disabled={isItemLocked}
+                                    className={`w-full p-2.5 pl-8 flex items-start gap-3 transition-all text-left
+                                      ${isItemLocked ? 'opacity-40 cursor-not-allowed grayscale' : ''}
+                                      ${isActive ? (isDarkMode ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'bg-gradient-to-r from-indigo-50 to-white border-l-4 border-indigo-600 shadow-sm') : 'border-l-4 border-transparent hover:bg-slate-800/20 dark:hover:bg-slate-800/30 hover:border-slate-200 dark:hover:border-transparent'}`}
+                                  >
+                                    <div className="mt-0.5 shrink-0 transition-colors">
+                                      {isItemLocked ? <Lock size={14} className="text-rose-500" />
+                                        : isComplete ? <CheckCircle2 size={14} className="text-emerald-500" />
+                                        : item.type === 'video' ? <PlaySquare size={14} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
+                                        : item.type === 'article' ? <FileText size={14} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
+                                        : <HelpCircle size={14} className={isActive ? 'text-indigo-600' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')} />
+                                      }
+                                    </div>
+                                    <div>
+                                      <p className={`text-xs font-bold leading-tight transition-colors ${isActive ? (isDarkMode ? 'text-indigo-300' : 'text-indigo-900') : (isDarkMode ? 'text-slate-400' : 'text-slate-600')}`}>{item.title}</p>
+                                      <p className={`text-[8px] font-black mt-1 uppercase tracking-widest ${isActive ? (isDarkMode ? 'text-indigo-500/70' : 'text-indigo-500') : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`}>
+                                        {isItemLocked ? 'LOCKED' : `${item.type} • ${item.duration || 'N/A'}`}
+                                      </p>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <div>
-                            <p className={`text-sm font-bold leading-tight transition-colors ${isActive ? (isDarkMode ? 'text-indigo-300' : 'text-indigo-900') : (isDarkMode ? 'text-slate-400' : 'text-slate-600')}`}>{item.title}</p>
-                            <p className={`text-[9px] font-black mt-1 uppercase tracking-widest ${isActive ? (isDarkMode ? 'text-indigo-500/70' : 'text-indigo-500') : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`}>
-                              {isItemLocked ? 'LOCKED' : `${item.type} • ${item.duration || 'N/A'}`}
-                            </p>
-                          </div>
-                        </button>
+
+                        </div>
                       );
                     })}
+
                   </div>
                 </div>
               </div>
@@ -445,26 +508,21 @@ export default function LectureViewer() {
   );
 
   const renderMainContent = () => {
-    if (!activeItem || chapters.length === 0) {
+    if (!activeItem || modules.length === 0) {
       return (
         <main className={`flex-1 flex flex-col items-center justify-center p-6 text-center transition-all duration-300 ${isDarkMode ? 'bg-[#0B1121]' : 'bg-[#FAFAFA]'}`}>
           <div className="relative mb-8">
-            {/* Soft Glow Effect */}
             <div className={`absolute inset-0 blur-3xl rounded-full ${isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-500/5'}`}></div>
-            
-            {/* Glassmorphic Icon Container */}
             <div className={`relative p-8 rounded-[2.5rem] border backdrop-blur-xl transition-all ${isDarkMode ? 'bg-slate-900/50 border-slate-800 shadow-2xl' : 'bg-white border-slate-200 shadow-xl shadow-slate-200/50'}`}>
               <PlaySquare size={64} className="text-indigo-500 animate-pulse" />
             </div>
           </div>
-
           <h2 className={`text-3xl font-black mb-3 tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
             Curriculum Empty
           </h2>
           <p className={`max-w-md text-lg mb-10 leading-relaxed font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             This course doesn't have any lessons uploaded yet. Check back soon for updates!
           </p>
-
           <button 
             onClick={() => navigate('/student-dashboard')}
             className="group flex items-center gap-3 px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all duration-300 shadow-xl shadow-indigo-600/25 active:scale-95"
@@ -479,7 +537,6 @@ export default function LectureViewer() {
     const isComplete = completedItemIds.includes(activeItem.id);
 
     return (
-      
       <main className={`flex-1 flex flex-col min-w-0 h-full overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-[#0B1121]' : 'bg-[#FAFAFA]'}`}>
         <header className={`h-16 px-4 lg:px-6 shrink-0 flex items-center justify-between border-b z-10 transition-colors ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white/80 backdrop-blur-md border-slate-200/60 shadow-sm'}`}>
           <div className="flex items-center gap-3">
@@ -493,11 +550,9 @@ export default function LectureViewer() {
           </div>
           
           <div className="flex items-center gap-2">
-            {/* 🚨 MANUAL THEME TOGGLE BUTTON */}
             <button onClick={toggleTheme} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-100'}`}>
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-
             <button onClick={() => setIsChatOpen(!isChatOpen)} className={`p-2 rounded-xl transition-colors flex items-center gap-2 ${isChatOpen ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400' : (isDarkMode ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900')}`}>
               {isChatOpen ? <PanelRightClose size={20}/> : <PanelRightOpen size={20}/>}
               <span className="text-xs font-bold hidden sm:inline">Q&A</span>
@@ -549,14 +604,12 @@ export default function LectureViewer() {
                         </div>
                       )}
                     </div>
-
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* BELOW PLAYER INFO & TABS */}
           <div className="max-w-6xl mx-auto p-6 md:p-8 lg:p-10">
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10">
               <div>
