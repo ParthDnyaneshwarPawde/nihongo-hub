@@ -21,20 +21,21 @@ import ExamHub from '@features/student/ExamEngine/ExamHub';
 import QuestionForge from '@features/teacher/TeacherDashboard/TeacherBatches/QuestionForge/QuestionForge';
 import LectureViewer from '@features/student/StudentDashboard/CourseContent/LectureViewer';
 
+// 🚨 IMPORT THE NEW ANALYTICS DASHBOARD
+import ExerciseAnalytics from '@features/student/StudentDashboard/ExamEngine/ExerciseAnalytics'; 
+
 // 🚨 IMPORT THE NETWORK SHIELD
 import NetworkShield from '@/components/NetworkShield';
 
 function App() {
   const navigate = useNavigate();
-  const location = useLocation(); // Helps us see where the user is trying to go
+  const location = useLocation(); 
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         if (user) {
-          // 1. If we're already on a deeper page (like a Room), don't force-redirect 
-          // to the dashboard, just let them stay where they are.
           const isAtRoot = location.pathname === "/";
 
           const userRef = doc(db, "users", user.uid);
@@ -43,7 +44,6 @@ function App() {
           if (userSnap.exists()) {
             const role = userSnap.data().role?.toLowerCase();
             
-            // Only redirect if they are sitting on the Login page
             if (isAtRoot) {
               if (role === 'teacher' || role === 'admin') {
                 navigate('/teacher-dashboard', { replace: true });
@@ -52,7 +52,6 @@ function App() {
               }
             }
           } else {
-            // User exists in Auth but no profile yet
             if (isAtRoot || location.pathname !== "/onboarding") {
               navigate('/onboarding', { replace: true });
             }
@@ -61,8 +60,6 @@ function App() {
       } catch (error) {
         console.error("Auth initialization error:", error);
       } finally {
-        // 🚨 THE FIX: This runs whether the user exists or not!
-        // It hides the "Synchronizing Dojo" screen.
         setIsInitializing(false); 
       }
     });
@@ -72,13 +69,11 @@ function App() {
 
   return (
     <>
-      {/* 🚨 MOUNTED GLOBALLY: This protects the app on every single page */}
       <NetworkShield />
 
       {isInitializing ? (
         <div className="h-screen w-full flex items-center justify-center bg-[#0F172A]">
            <div className="flex flex-col items-center gap-6">
-             {/* Smooth spinner */}
              <div className="w-10 h-10 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
              <div className="animate-pulse flex flex-col items-center gap-1">
                 <span className="text-indigo-500 font-black tracking-[0.3em] text-[10px] uppercase">
@@ -157,6 +152,13 @@ function App() {
             </ProtectedRoute>
           } />
           
+          {/* 🚨 THE NEW ANALYTICS ROUTE */}
+          <Route path="/analytics/:exerciseId" element={
+            <ProtectedRoute requiredRole="student">
+              <ExerciseAnalytics />
+            </ProtectedRoute>
+          } />
+
           <Route path="/room/:roomID" element={
             window.location.search.includes('role=guest') 
               ? <Room /> 

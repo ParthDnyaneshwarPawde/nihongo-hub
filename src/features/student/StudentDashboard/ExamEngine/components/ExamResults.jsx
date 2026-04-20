@@ -17,13 +17,21 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db, auth } from '@services/firebase';
 import { doc, getDoc, writeBatch, increment } from 'firebase/firestore';
 
+// 🚨 IMPORT OUR NEW ANALYTICS ENGINES
+import { generateExerciseAnalytics } from '@/utils/analyticsEngine';
+import { saveExamAndUnlockBadge } from '@/services/firebaseAnalytics';
+
 export default function ExamResults({ 
   score, 
   totalQuestions, 
   totalPossiblePoints, 
   examConfig, 
   totalTimeSpent, 
-  isDarkMode 
+  isDarkMode,
+  // 🚨 NEW PROPS FROM EXAM ENGINE
+  rawQuestions = [],
+  questionStates = {},
+  isFirstAttempt = false
 }) {
   const { batchId, exerciseId } = useParams();
   const navigate = useNavigate();
@@ -38,6 +46,9 @@ export default function ExamResults({
     total: 0, 
     isRedeemed: false 
   });
+
+  // 🚨 NEW STATE FOR ANALYTICS
+  const [isCalculating, setIsCalculating] = useState(false);
 
   // Accuracy: (Total Score / Sum of all Question Points) * 100
   const accuracy = totalPossiblePoints > 0 
@@ -99,6 +110,53 @@ export default function ExamResults({
       console.error("Redemption failed:", error);
     } finally {
       setIsRedeeming(false);
+    }
+  };
+
+  // 🚨 THE NEW ANALYTICS HANDLER
+  const handleCalculateAnalytics = async () => {
+    if (!rawQuestions || rawQuestions.length === 0) {
+      alert("Exam data is missing!");
+      return;
+    }
+
+    setIsCalculating(true);
+    try {
+      const userId = auth.currentUser?.uid;
+
+      // 1. Format the raw question + state data for our Engine
+      const analyticsInput = rawQuestions.map(q => {
+        const state = questionStates[q.id] || {};
+        const attempts = state.attempts || [];
+        const finalAttempt = attempts[attempts.length - 1];
+
+        return {
+          id: q.id,
+          topic: q.topic || 'General',
+          type: q.type || 'default',
+          expectedTimeSec: q.idealTimeSeconds || 20,
+          isCorrect: state.isCorrect || false,
+          timeSpentSec: finalAttempt?.timeSpentInSeconds || 0,
+          changedAnswer: attempts.length > 1, // Multiple attempts implies a change/retry
+          attemptsNeeded: attempts.length || 1
+        };
+      });
+
+      // 2. Generate the Analytics Payload
+      const analyticsPayload = generateExerciseAnalytics(analyticsInput);
+
+      // 3. Save Ledger and Unlock Badges (First attempt check handles fairness automatically!)
+      await saveExamAndUnlockBadge(userId, batchId, exerciseId, analyticsPayload, isFirstAttempt);
+
+      // 4. Navigate to the final beautiful UI Dashboard
+      navigate(`/analytics/${exerciseId}`, { state: { analytics: analyticsPayload, rawQuestions: rawQuestions, 
+          questionStates: questionStates } });
+
+    } catch (error) {
+      console.error("Failed to generate analytics:", error);
+      alert("There was an error generating your detailed analytics.");
+    } finally {
+      setIsCalculating(false);
     }
   };
 
@@ -168,9 +226,19 @@ export default function ExamResults({
 
         {/* Footer Actions - More Compact */}
         <div className="flex flex-col gap-3">
-          <button className={`flex items-center justify-center gap-2 w-full py-4 text-[9px] font-black uppercase tracking-widest rounded-2xl border-2 transition-all ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-            <LineChart size={16} /> Calculate Deep Analytics
+          {/* 🚨 WIRED UP CALCULATE BUTTON */}
+          <button 
+            onClick={handleCalculateAnalytics}
+            disabled={isCalculating}
+            className={`flex items-center justify-center gap-2 w-full py-4 text-[9px] font-black uppercase tracking-widest rounded-2xl border-2 transition-all ${isDarkMode ? 'border-slate-800 text-indigo-400 hover:bg-slate-800 hover:border-indigo-500/30' : 'border-slate-200 text-indigo-600 hover:bg-indigo-50'}`}
+          >
+            {isCalculating ? (
+              <><Loader2 size={16} className="animate-spin" /> Analyzing Behavior...</>
+            ) : (
+              <><LineChart size={16} /> Calculate Deep Analytics</>
+            )}
           </button>
+          
           <button onClick={() => navigate(-1)} className={`flex items-center justify-center gap-2 w-full py-4 text-[9px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-lg ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-900 text-white'}`}>
             <ChevronLeft size={16} /> Return to Lecture Viewer
           </button>

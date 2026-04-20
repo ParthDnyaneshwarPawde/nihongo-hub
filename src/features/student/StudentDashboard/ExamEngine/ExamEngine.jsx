@@ -73,6 +73,7 @@ export default function ExamEngine() {
 
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [localNote, setLocalNote] = useState(""); 
+  const [isFirstAttempt, setIsFirstAttempt] = useState(false);
 
   const session = useExamSession(questions);
 
@@ -220,6 +221,7 @@ export default function ExamEngine() {
   };
 
   // 🚨 COMPLETELY UPGRADED: Telemetry + Event Shield + Text Sanitization
+  // 🚨 COMPLETELY UPGRADED: Telemetry + Event Shield + Partial Scoring + NEGATIVE DEDUCTIONS
   const handleCheck = (manualValue = null) => {
     // Event Object Shield to prevent circular JSON crash
     if (manualValue && typeof manualValue === 'object' && 'nativeEvent' in manualValue) {
@@ -233,7 +235,16 @@ export default function ExamEngine() {
 
     let isCorrect = false;
     let isPartial = false; 
+    let pointsEarned = 0; 
     let rawResponse = manualValue !== null ? [manualValue] : currentState.selectedOptions;
+
+    const attemptNumber = (currentState.attempts?.length || 0) + 1;
+    const isFirstAttempt = attemptNumber === 1;
+    
+    // 🚨 SCORING WEIGHTS
+    const basePoints = currentQ.points || 1;
+    // Look for negativePoints in your DB, otherwise default to 0 (no deduction)
+    const penaltyPoints = currentQ.negativePoints || 0; 
 
     // --- SMART CHECKING LOGIC ---
     if (currentQ.type.includes('choice')) {
@@ -241,36 +252,58 @@ export default function ExamEngine() {
       const selectedIds = currentState.selectedOptions || [];
 
       if (currentQ.type.includes('multi') || currentQ.type.includes('multiple')) {
-        isCorrect = correctIds.length === selectedIds.length && correctIds.every(id => selectedIds.includes(id));
-        const hasSomeCorrect = selectedIds.some(id => correctIds.includes(id));
-        const missedSome = correctIds.some(id => !selectedIds.includes(id));
-        if (!isCorrect && (hasSomeCorrect || missedSome)) {
-          isPartial = true; 
+        const correctSelectionsCount = selectedIds.filter(id => correctIds.includes(id)).length;
+        const wrongSelectionsCount = selectedIds.filter(id => !correctIds.includes(id)).length;
+
+        isCorrect = correctSelectionsCount === correctIds.length && wrongSelectionsCount === 0;
+        isPartial = correctSelectionsCount > 0 && correctSelectionsCount < correctIds.length && wrongSelectionsCount === 0;
+
+        // 🚨 ADVANCED PARTIAL SCORING & THE POISON PILL
+        if (wrongSelectionsCount > 0) {
+          // POISON PILL: Any wrong answer applies the negative penalty!
+          pointsEarned = -penaltyPoints; 
+        } else if (correctSelectionsCount > 0) {
+          // Calculate the exact fraction of correct answers
+          let rawPoints = (correctSelectionsCount / correctIds.length) * basePoints;
+          
+          if (!isFirstAttempt) {
+            rawPoints = rawPoints / 2; 
+          }
+          pointsEarned = Math.round(rawPoints);
+        } else {
+          // They selected nothing? Still a fail.
+          pointsEarned = -penaltyPoints;
         }
       } else {
+        // Standard Single Choice
         isCorrect = correctIds.includes(selectedIds[0]);
+        if (isCorrect) {
+          pointsEarned = isFirstAttempt ? basePoints : Math.round(basePoints / 2);
+        } else {
+          pointsEarned = -penaltyPoints; // 🚨 NEGATIVE MARKING
+        }
       }
     } else {
+      // Standard Text/Input/Kanji
       const userInput = (manualValue !== null ? manualValue : currentState.selectedOptions[0] || "").toString().trim().toLowerCase();
       const correctList = (currentQ.correctOptions || []).map(ans => ans.toString().trim().toLowerCase());
       const fallback = currentQ.options?.find(o => o.isCorrect)?.text?.toString().trim().toLowerCase();
 
       isCorrect = correctList.includes(userInput) || (!!fallback && userInput === fallback);
       rawResponse = [userInput]; 
+      
+      if (isCorrect) {
+        pointsEarned = isFirstAttempt ? basePoints : Math.round(basePoints / 2);
+      } else {
+        pointsEarned = -penaltyPoints; // 🚨 NEGATIVE MARKING
+      }
     }
 
-    // --- 🚨 THE ATTEMPT BUILDER (Rich Payload Restored from Telemetry) ---
-    // --- 🚨 THE ATTEMPT BUILDER (Rich Payload Restored from Telemetry) ---
-    const attemptNumber = (currentState.attempts?.length || 0) + 1;
-    const isFirstAttempt = attemptNumber === 1;
-    const pointsEarned = isCorrect ? (isFirstAttempt ? (currentQ.points || 1) : ((currentQ.points || 1) / 2)) : 0;
-    
-    // 🚨 NEW: Smart Response ID Generation (res_123 and res_123_second)
+    // --- 🚨 THE ATTEMPT BUILDER ---
     let generatedResponseId;
     if (isFirstAttempt) {
       generatedResponseId = `res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     } else {
-      // Grab the ID from the first attempt and append _second
       const firstId = currentState.attempts[0].responseId;
       generatedResponseId = attemptNumber === 2 ? `${firstId}_second` : `${firstId}_attempt${attemptNumber}`;
     }
@@ -290,15 +323,12 @@ export default function ExamEngine() {
       },
       timeSpentInSeconds: currentTimeSpent,
       hintViewed: currentState.hintViewed || false,
-      pointsEarned,
+      pointsEarned, // Includes negative numbers now!
       correctOptions: currentQ.correctOptions || [],
       selectedOptions: [...rawResponse], 
       questionId: currentQ.id,
       questionType: currentQ.type || 'unknown', 
-      
-      // 🚨 Using the newly generated smart ID
       responseId: generatedResponseId,
-      
       difficulty: currentQ.difficulty || 'mid',
       topic: currentQ.topic || 'Uncategorized',
       subTopic: currentQ.subTopic || 'Uncategorized',
@@ -309,21 +339,25 @@ export default function ExamEngine() {
       ...attemptTelemetry 
     };
 
-    // --- STATE UPDATE ---
-    if (isCorrect) {
-      if (settings.playSounds) playAudioFeedback(true);
+    // --- 🚨 FIXED STATE UPDATE (Awards Partial Points & Deducts Penalties Properly) ---
+    if (isCorrect || (isPartial && !currentQ.secondAttempt)) {
+      // Scenario A: Fully correct, OR partially correct but they aren't allowed a second attempt.
+      if (settings.playSounds) playAudioFeedback(isCorrect);
       setQuestionStates(prev => ({
         ...prev,
         [currentQ.id]: { 
           ...prev[currentQ.id], 
           status: 'completed', 
-          isCorrect: true, 
-          isPartial: false,
+          isCorrect: isCorrect, 
+          isPartial: isPartial,
           attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
         }
       }));
-      setScore(s => s + pointsEarned);
+      setScore(s => s + pointsEarned); // Add full or partial points!
+
     } else if (currentQ.secondAttempt && !currentState.isSecondAttempt && currentState.status !== 'attempt1_failed') {
+      // Scenario B: They failed BUT they have a second attempt available.
+      // WE DO NOT SUBTRACT POINTS YET. They still have a chance to recover on attempt 2!
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
         ...prev,
@@ -335,10 +369,11 @@ export default function ExamEngine() {
         }
       }));
       
-      // Reset timer visually for second attempt
       timeSpentRef.current[currentQ.id] = 0;
       setTimeSpent(0);
+
     } else {
+      // Scenario C: Second attempt failed, OR they completely failed a single attempt question.
       if (settings.playSounds) playAudioFeedback(false);
       setQuestionStates(prev => ({
         ...prev,
@@ -350,6 +385,11 @@ export default function ExamEngine() {
           attempts: [...(prev[currentQ.id].attempts || []), newAttempt] 
         }
       }));
+      
+      // 🚨 DEDUCT OR ADD FINAL POINTS (Allows negative numbers to subtract from state)
+      if (pointsEarned !== 0) {
+         setScore(s => s + pointsEarned);
+      }
     }
   };
 
@@ -444,6 +484,7 @@ export default function ExamEngine() {
       const userExerciseRef = doc(db, 'users', userId, 'Batches', batchId, 'exercises', exerciseId);
       const userExerciseSnap = await getDoc(userExerciseRef);
       const previousAttemptsCount = userExerciseSnap.exists() ? (userExerciseSnap.data().totalAttempts || 0) : 0;
+      setIsFirstAttempt(previousAttemptsCount === 0);
       
       // Determine this current attempt number
       const currentExerciseAttemptNumber = previousAttemptsCount + 1;
@@ -602,7 +643,11 @@ export default function ExamEngine() {
 
   const totalPossiblePoints = questions.reduce((acc, q) => acc + (q.points || 0), 0);
 
-  if (examState === 'results') return <ExamResults score={session.score} totalPossiblePoints={totalPossiblePoints} totalQuestions={questions.length} examConfig={examConfig} totalTimeSpent={totalTimeSpent} isDarkMode={isDarkMode} onDashboard={() => navigate('/student-dashboard')} />;
+  if (examState === 'results') return <ExamResults score={session.score} totalPossiblePoints={totalPossiblePoints} totalQuestions={questions.length} examConfig={examConfig} totalTimeSpent={totalTimeSpent} isDarkMode={isDarkMode} onDashboard={() => navigate('/student-dashboard')} rawQuestions={questions}
+  questionStates={session.questionStates}
+  isFirstAttempt={isFirstAttempt}
+  batchId={batchId}
+  exerciseId={exerciseId} />;
 
   const fontClasses = { small: 'text-base', medium: 'text-xl', large: 'text-3xl', xlarge: 'text-4xl' }[settings.textSize] || 'text-xl';
   const timerIsCritical = timeSpent > (session.currentQ?.idealTimeSeconds || 60);

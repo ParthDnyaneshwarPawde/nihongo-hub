@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTheme } from '@/context/ThemeContext'; // 🚨 1. IMPORT THE THEME HOOK
 import { 
   ArrowLeft, ChevronRight, ChevronLeft, Clock, Video, Mic2, Tv, 
   Sparkles, History, Calendar as CalendarIcon, LayoutGrid, List, Timer 
@@ -7,10 +8,10 @@ import {
 export default function CalendarPage({ 
   level, 
   classes, 
-  isDarkMode, 
-  onBack, 
+  onBack, // 🚨 2. REMOVED isDarkMode FROM PROPS
   onLiveClick 
 }) {
+  const { isDarkMode } = useTheme(); // 🚨 3. GRAB THEME DIRECTLY FROM CONTEXT
   const [viewMode, setViewMode] = useState('list');
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -33,7 +34,7 @@ export default function CalendarPage({
     });
   }, [currentDate]);
 
-  // 3. 🚨 SYNCED FILTER: Only show ended classes belonging to the viewed week
+  // 3. SYNCED FILTER: Only show ended classes belonging to the viewed week
   const endedClassesInView = useMemo(() => {
     const startOfWeek = new Date(weekDays[0]).setHours(0, 0, 0, 0);
     const endOfWeek = new Date(weekDays[6]).setHours(23, 59, 59, 999);
@@ -90,17 +91,17 @@ export default function CalendarPage({
         {/* 🚨 NAVIGATION CONTROLS */}
         <div className="flex flex-wrap items-center gap-4">
           <div className={`flex items-center gap-1 p-1.5 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
-            <button onClick={() => navigateWeek(-1)} className="p-2 hover:bg-slate-800 rounded-xl text-slate-500 hover:text-white transition-all"><ChevronLeft size={18} /></button>
+            <button onClick={() => navigateWeek(-1)} className={`p-2 rounded-xl transition-all ${isDarkMode ? 'hover:bg-slate-800 text-slate-500 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}><ChevronLeft size={18} /></button>
             <button onClick={jumpToToday} className="px-3 py-1 text-[10px] font-black uppercase tracking-tighter text-indigo-500 hover:bg-indigo-500/10 rounded-lg transition-all border border-transparent hover:border-indigo-500/20">Today</button>
             <span className="px-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
               {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </span>
-            <button onClick={() => navigateWeek(1)} className="p-2 hover:bg-slate-800 rounded-xl text-slate-500 hover:text-white transition-all"><ChevronRight size={18} /></button>
+            <button onClick={() => navigateWeek(1)} className={`p-2 rounded-xl transition-all ${isDarkMode ? 'hover:bg-slate-800 text-slate-500 hover:text-white' : 'hover:bg-slate-100 text-slate-500 hover:text-slate-900'}`}><ChevronRight size={18} /></button>
           </div>
 
           <div className={`flex p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            <button onClick={() => setViewMode('list')} className={`p-2.5 rounded-xl transition-all ${viewMode === 'list' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-400'}`}><List size={20} /></button>
-            <button onClick={() => setViewMode('detailed')} className={`p-2.5 rounded-xl transition-all ${viewMode === 'detailed' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-400'}`}><LayoutGrid size={20} /></button>
+            <button onClick={() => setViewMode('list')} className={`p-2.5 rounded-xl transition-all ${viewMode === 'list' ? 'bg-indigo-600 text-white shadow-lg' : (isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700')}`}><List size={20} /></button>
+            <button onClick={() => setViewMode('detailed')} className={`p-2.5 rounded-xl transition-all ${viewMode === 'detailed' ? 'bg-indigo-600 text-white shadow-lg' : (isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-500 hover:text-slate-700')}`}><LayoutGrid size={20} /></button>
           </div>
         </div>
       </header>
@@ -123,17 +124,17 @@ export default function CalendarPage({
 
           {/* 📅 UPCOMING (Filtered by current week viewed) */}
           <section className="space-y-6">
-            <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.4em] border-b pb-4 ml-2 dark:border-slate-800 border-slate-200">Upcoming This Week</h3>
+            <h3 className={`text-[10px] font-black text-indigo-500 uppercase tracking-[0.4em] border-b pb-4 ml-2 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>Upcoming This Week</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {upcomingClasses.length > 0 ? upcomingClasses.map(cls => (
                 <EventCard key={cls.id} type={cls.type} title={cls.classTitle || cls.topic} sensei={cls.teacherName || cls.teacher} rawTime={cls.scheduledTime} isDark={isDarkMode} isLive={false} onClick={() => alert("Class hasn't started yet.")} />
-              )) : <p className="text-[10px] font-bold text-slate-500 uppercase p-12 text-center col-span-full border-2 border-dashed rounded-[2rem] dark:border-slate-800">No scheduled classes this week.</p>}
+              )) : <p className={`text-[10px] font-bold text-slate-500 uppercase p-12 text-center col-span-full border-2 border-dashed rounded-[2rem] ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>No scheduled classes this week.</p>}
             </div>
           </section>
 
           {/* ✅ SYNCED VAULT ARCHIVES (Filters when you navigate weeks) */}
           <section className="space-y-6">
-            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] border-b pb-4 ml-2 dark:border-slate-800 border-slate-200">Vault Archives (Week History)</h3>
+            <h3 className={`text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] border-b pb-4 ml-2 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>Vault Archives (Week History)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {endedClassesInView.length > 0 ? endedClassesInView.map(cls => (
                 <EventCard 
@@ -148,13 +149,13 @@ export default function CalendarPage({
                   duration={getDuration(cls.scheduledTime, cls.endedAt)}
                   onClick={() => alert("Recording feature coming soon!")} 
                 />
-              )) : <p className="text-[10px] font-bold text-slate-500 uppercase p-12 text-center col-span-full border-2 border-dashed rounded-[2rem] dark:border-slate-800">No session records found for this week.</p>}
+              )) : <p className={`text-[10px] font-bold text-slate-500 uppercase p-12 text-center col-span-full border-2 border-dashed rounded-[2rem] ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>No session records found for this week.</p>}
             </div>
           </section>
         </div>
       ) : (
         /* 🚨 ZEN GRID VIEW (GOOGLE CALENDAR STYLE) */
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-px bg-slate-200 dark:bg-slate-800 rounded-[2.5rem] overflow-hidden border dark:border-slate-800 border-slate-200 shadow-2xl relative z-10 animate-in zoom-in-95 duration-500">
+        <div className={`grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-px rounded-[2.5rem] overflow-hidden border shadow-2xl relative z-10 animate-in zoom-in-95 duration-500 ${isDarkMode ? 'bg-slate-800 border-slate-800' : 'bg-slate-200 border-slate-200'}`}>
           {weekDays.map((date, idx) => {
             const isToday = date.toDateString() === new Date().toDateString();
             const dayClasses = endedClasses.filter(cls => new Date(cls.scheduledTime).toDateString() === date.toDateString());
@@ -162,11 +163,12 @@ export default function CalendarPage({
             return (
               <div 
                 key={idx} 
-                className={`min-h-[450px] flex flex-col border-r last:border-r-0 dark:border-slate-800 border-slate-100 transition-colors 
-                  ${isToday ? (isDarkMode ? 'bg-indigo-500/[0.04]' : 'bg-indigo-500/[0.9]') : (isDarkMode ? 'bg-[#0B1120]' : 'bg-white')}`}
+                className={`min-h-[450px] flex flex-col border-r last:border-r-0 transition-colors 
+                  ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}
+                  ${isToday ? (isDarkMode ? 'bg-indigo-500/[0.04]' : 'bg-indigo-500/[0.08]') : (isDarkMode ? 'bg-[#0B1120]' : 'bg-white')}`}
               >
                 {/* Day Header */}
-                <div className={`p-5 text-center border-b dark:border-slate-800/50 border-slate-100 ${isToday ? isDarkMode ? 'text-indigo-500' : 'text-white' : 'text-slate-400'}`}>
+                <div className={`p-5 text-center border-b ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'} ${isToday ? (isDarkMode ? 'text-indigo-400' : 'text-indigo-600') : 'text-slate-400'}`}>
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] mb-1">{date.toLocaleDateString('en-US', { weekday: 'short' })}</p>
                   <p className={`text-2xl font-black ${isToday ? 'scale-110' : ''}`}>{date.getDate()}</p>
                   {isToday && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full mx-auto mt-1 shadow-[0_0_10px_#6366f1]"></div>}
@@ -195,13 +197,13 @@ export default function CalendarPage({
                         <p className="text-[9px] font-bold text-slate-500 uppercase truncate">Sensei {cls.teacherName?.split(' ')[0]}</p>
                       </div>
 
-                      <div className="absolute -right-2 -bottom-2 text-5xl font-black italic opacity-[0.03] select-none group-hover:opacity-[0.07] transition-opacity">
+                      <div className={`absolute -right-2 -bottom-2 text-5xl font-black italic opacity-[0.03] select-none group-hover:opacity-[0.07] transition-opacity ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                          {new Date(cls.scheduledTime).getHours()}:00
                       </div>
                     </div>
                   )) : (
                     <div className="flex-1 flex items-center justify-center opacity-10">
-                       <div className="w-1.5 h-1.5 rounded-full bg-slate-500"></div>
+                       <div className={`w-1.5 h-1.5 rounded-full ${isDarkMode ? 'bg-slate-500' : 'bg-slate-300'}`}></div>
                     </div>
                   )}
                 </div>
@@ -234,21 +236,21 @@ function EventCard({ type, title, sensei, rawTime, isDark, isLive, isEnded, dura
     <div onClick={onClick} className={`group relative p-1 rounded-[2.5rem] transition-all duration-500 cursor-pointer ${isLive ? 'bg-gradient-to-br from-rose-500 to-indigo-600 shadow-xl hover:-translate-y-2' : isDark ? 'bg-slate-800/50' : 'bg-slate-200/50'}`}>
       <div className={`relative h-full w-full rounded-[2.3rem] p-6 flex flex-col justify-between overflow-hidden ${isDark ? 'bg-[#0B1120]' : 'bg-white'}`}>
         <div className="flex justify-between items-start mb-6 relative z-10">
-          <div className={`flex flex-col items-center justify-center border w-14 h-14 rounded-2xl ${isLive ? 'bg-rose-500/10 border-rose-500/20' : 'bg-slate-50 dark:bg-white/5 border-slate-200'}`}>
+          <div className={`flex flex-col items-center justify-center border w-14 h-14 rounded-2xl ${isLive ? 'bg-rose-500/10 border-rose-500/20' : isDark ? 'bg-white/5 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
             <span className={`text-[9px] font-black leading-none uppercase ${isLive ? 'text-rose-500' : 'text-indigo-500'}`}>{isLive ? 'LIVE' : dateObj.toLocaleDateString('en-US', {month: 'short'}).toUpperCase()}</span>
             <span className={`font-black mt-1 ${isLive ? 'text-sm text-rose-500' : `text-lg ${isDark ? 'text-white' : 'text-slate-900'}`}`}>{isLive ? 'NOW' : dateObj.getDate()}</span>
           </div>
-          <div className={`p-3 rounded-2xl shadow-sm ${isLive ? 'bg-rose-500 text-white' : 'bg-slate-100 text-indigo-500 dark:bg-slate-900'}`}>
+          <div className={`p-3 rounded-2xl shadow-sm ${isLive ? 'bg-rose-500 text-white' : isDark ? 'bg-slate-900 text-indigo-400' : 'bg-slate-100 text-indigo-500'}`}>
             {icons[type] || icons.Video}
           </div>
         </div>
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-2">
-            {isEnded && <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[8px] font-black uppercase">Ended</span>}
+            {isEnded && <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>Ended</span>}
             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{sensei}</span>
           </div>
           <h4 className={`text-xl font-black leading-tight tracking-tight mb-4 ${isLive ? 'text-white' : isDark ? 'text-white' : 'text-slate-900'}`}>{title}</h4>
-          <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800/50">
+          <div className={`flex items-center justify-between pt-4 border-t ${isDark ? 'border-slate-800/50' : 'border-slate-100'}`}>
             <div className={`flex items-center gap-2 ${isLive ? 'text-rose-500' : 'text-slate-500'}`}>
               <Clock size={14} /><span className="text-[10px] font-black uppercase">{isLive ? "HAPPENING NOW" : dateObj.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'})}</span>
             </div>
