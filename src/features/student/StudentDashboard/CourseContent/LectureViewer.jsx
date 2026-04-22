@@ -4,50 +4,41 @@ import {
   ArrowLeft, MessageSquare, PlayCircle, FileText, HelpCircle, 
   ChevronDown, Download, Send, PlaySquare, CheckCircle2, Clock, 
   PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, 
-  Check, Loader2, Lock, Sun, Moon, Sparkles, Zap, Star, StarHalf
+  Check, Loader2, Lock, Sun, Moon, Sparkles
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// 🚨 FIREBASE IMPORTS
 import { db, auth } from '@services/firebase'; 
-import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, setDoc, writeBatch, increment } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, writeBatch, increment } from 'firebase/firestore';
 
 export default function LectureViewer() {
   const navigate = useNavigate();
   const { batchId } = useParams(); 
-  
   const { isDarkMode, toggleTheme } = useTheme();
 
-  // const [completedItemIds, setCompletedItemIds] = useState([]); 
-const [claimedXPIds, setClaimedXPIds] = useState([]);
-const [showXpDialog, setShowXpDialog] = useState(false);
-const XP_REWARD = 20;
+  const [claimedXPIds, setClaimedXPIds] = useState([]);
+  const [showXpDialog, setShowXpDialog] = useState(false);
+  const XP_REWARD = 20;
 
-  // -- UI State --
   const [isNavOpen, setIsNavOpen] = useState(window.innerWidth >= 1024);
   const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1280);
   const [activeTab, setActiveTab] = useStickyState('overview', `lectureviewer-tab-${batchId}`); 
   const [isLoading, setIsLoading] = useState(true);
   
-  // -- Content State --
   const [courseTitle, setCourseTitle] = useState("Loading Course...");
-  const [modules, setModules] = useState([]); // 🚨 UPGRADED: Replaced flat chapters with nested modules
+  const [modules, setModules] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
   
-  // -- Expansion States --
-  const [expandedModules, setExpandedModules] = useState([]); // 🚨 NEW
-  const [expandedChapters, setExpandedChapters] = useState([]);
+  // 🚨 UI PERSISTENCE: Load initial state from localStorage
+  const [expandedModules, setExpandedModules] = useState(() => JSON.parse(localStorage.getItem(`expanded_modules_${batchId}`) || '[]'));
+  const [expandedChapters, setExpandedChapters] = useState(() => JSON.parse(localStorage.getItem(`expanded_chapters_${batchId}`) || '[]'));
   
-  // -- Interactive State --
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [completedItemIds, setCompletedItemIds] = useState([]); 
 
-  // ----------------------------------------------------
-  // 1. 📥 FETCH CURRICULUM (🚨 UPGRADED TO 3-TIER HIERARCHY & STRICT ORDER SORTING)
-  // ----------------------------------------------------
   useEffect(() => {
     const fetchFullCourse = async () => {
       if (!batchId) {
@@ -74,12 +65,10 @@ const XP_REWARD = 20;
         }
 
         const batchData = batchDoc.data();
-        
         const isFree = batchData.isFree === true || batchData.isFree === "true";
         const isEnrolled = userData.enrolledCourses?.includes(batchData.title) || userData.enrolledCourses?.includes(batchData.level) || userData.enrolledCourses?.includes(batchId);
 
         if (!isFree && !isEnrolled) {
-           console.warn("Security Alert: Unauthorized access attempt blocked.");
            navigate('/student-dashboard'); 
            return; 
         }
@@ -92,17 +81,14 @@ const XP_REWARD = 20;
           setClaimedXPIds(progressDoc.data().claimedXPIds || []);
         }
 
-        const modulesRef = collection(db, `batches/${batchId}/module`);
-        const modSnap = await getDocs(modulesRef);
-        
+        const modSnap = await getDocs(collection(db, `batches/${batchId}/module`));
         let loadedModules = [];
 
         for (const modDoc of modSnap.docs) {
           const modData = modDoc.data();
           const modId = modDoc.id;
 
-          const chaptersRef = collection(db, `batches/${batchId}/module/${modId}/chapters`);
-          const chapSnap = await getDocs(chaptersRef);
+          const chapSnap = await getDocs(collection(db, `batches/${batchId}/module/${modId}/chapters`));
           let loadedChapters = [];
 
           for (const chapDoc of chapSnap.docs) {
@@ -119,46 +105,71 @@ const XP_REWARD = 20;
             const exSnap = await getDocs(collection(db, `batches/${batchId}/module/${modId}/chapters/${chapId}/exercises`));
             exSnap.forEach(d => items.push({ id: d.id, type: 'quiz', ...d.data(), modId, chapId }));
 
-            // 🚨 SORT LEVEL 3: Items by order
             items.sort((a, b) => (a.order ?? a.createdAt?.seconds ?? 0) - (b.order ?? b.createdAt?.seconds ?? 0));
 
             loadedChapters.push({
               id: chapId,
               title: chapData.chapterName || chapData.title || 'Chapter',
               isLocked: chapData.isLocked ?? false, 
-              order: chapData.order || 0, // Fallback for safety
+              order: chapData.order || 0,
               items: items
             });
           }
 
-          // 🚨 SORT LEVEL 2: Chapters by order
           loadedChapters.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
           loadedModules.push({
             id: modId,
             title: modData.name || 'Module',
             isLocked: modData.isLocked ?? false,
-            order: modData.order || 0, // Fallback for safety
+            order: modData.order || 0,
             chapters: loadedChapters
           });
         }
 
-        // 🚨 SORT LEVEL 1: Modules by order
         loadedModules.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
         setModules(loadedModules);
 
-        // Auto-expand and select first item
-        if (loadedModules.length > 0) {
-          setExpandedModules([loadedModules[0].id]);
-          if (loadedModules[0].chapters.length > 0) {
-            setExpandedChapters([loadedModules[0].chapters[0].id]);
-            if (loadedModules[0].chapters[0].items.length > 0) {
-              setActiveItem(loadedModules[0].chapters[0].items[0]);
+        // 🚨 UI PERSISTENCE: Restore the active item
+        const savedActiveId = localStorage.getItem(`active_item_${batchId}`);
+        let foundSavedItem = null;
+
+        if (savedActiveId) {
+          for (const m of loadedModules) {
+            for (const c of m.chapters) {
+              const match = c.items.find(i => i.id === savedActiveId);
+              if (match) { foundSavedItem = match; break; }
             }
+            if (foundSavedItem) break;
           }
         }
 
+        if (foundSavedItem) {
+          setActiveItem(foundSavedItem);
+          // If no folders were explicitly saved as open, open the folder of the saved item
+          if (!localStorage.getItem(`expanded_modules_${batchId}`)) {
+             setExpandedModules([foundSavedItem.modId]);
+             localStorage.setItem(`expanded_modules_${batchId}`, JSON.stringify([foundSavedItem.modId]));
+          }
+          if (!localStorage.getItem(`expanded_chapters_${batchId}`)) {
+             setExpandedChapters([foundSavedItem.chapId]);
+             localStorage.setItem(`expanded_chapters_${batchId}`, JSON.stringify([foundSavedItem.chapId]));
+          }
+        } else if (loadedModules.length > 0) {
+          // Fallback to opening the very first item if nothing is saved in memory
+          const firstMod = loadedModules[0];
+          const firstChap = firstMod.chapters[0];
+          
+          if (!localStorage.getItem(`expanded_modules_${batchId}`)) {
+            setExpandedModules([firstMod.id]);
+            localStorage.setItem(`expanded_modules_${batchId}`, JSON.stringify([firstMod.id]));
+          }
+          if (firstChap && !localStorage.getItem(`expanded_chapters_${batchId}`)) {
+            setExpandedChapters([firstChap.id]);
+            localStorage.setItem(`expanded_chapters_${batchId}`, JSON.stringify([firstChap.id]));
+          }
+          if (firstChap?.items.length > 0) setActiveItem(firstChap.items[0]);
+        }
       } catch (error) {
         console.error("Failed to load curriculum:", error);
       } finally {
@@ -169,14 +180,10 @@ const XP_REWARD = 20;
     fetchFullCourse();
   }, [batchId, navigate]);
 
-  // ----------------------------------------------------
-  // 2. LIVE FETCH Q&A
-  // ----------------------------------------------------
   useEffect(() => {
     if (!batchId || !activeItem?.id) return;
 
     setComments([]); 
-
     const qnaRef = collection(db, `batches/${batchId}/qna`);
     const q = query(qnaRef, where('itemId', '==', activeItem.id));
 
@@ -208,9 +215,6 @@ const XP_REWARD = 20;
   }, [batchId, activeItem?.id]);
 
 
-  // ----------------------------------------------------
-  // 3. SEND MESSAGE
-  // ----------------------------------------------------
   const handleSendMessage = async () => {
     if (!newComment.trim() || !activeItem) return;
     const userId = auth.currentUser?.uid || "guest";
@@ -237,29 +241,20 @@ const XP_REWARD = 20;
     if (e.key === 'Enter') handleSendMessage();
   };
 
-  // ----------------------------------------------------
-  // 4. TOGGLE COMPLETION
-  // ----------------------------------------------------
-const toggleCompletion = async () => {
+  const toggleCompletion = async () => {
     if (!activeItem || !auth.currentUser) return;
     const userId = auth.currentUser.uid;
-    const XP_REWARD = 20; // 🚨 Ensure this is defined
     
-    // 1. Check existing status using .includes
     const isCurrentlyCompleted = completedItemIds.includes(activeItem.id);
     const hasAlreadyClaimedXP = (claimedXPIds || []).includes(activeItem.id);
 
-    // 2. Determine new states (Using Set to prevent duplicates)
     let updatedCompletedIds;
     if (isCurrentlyCompleted) {
-      // Remove the ID if it exists
       updatedCompletedIds = completedItemIds.filter(id => id !== activeItem.id);
     } else {
-      // 🚨 THE FIX: Use Set to ensure the ID is only added once
       updatedCompletedIds = Array.from(new Set([...completedItemIds, activeItem.id]));
     }
     
-    // XP is only granted if they are completing it for the FIRST time ever
     const shouldGrantXP = !isCurrentlyCompleted && !hasAlreadyClaimedXP;
     
     let updatedClaimedXPIds = (claimedXPIds || []);
@@ -267,7 +262,6 @@ const toggleCompletion = async () => {
       updatedClaimedXPIds = Array.from(new Set([...updatedClaimedXPIds, activeItem.id]));
     }
 
-    // 3. Optimistic UI Update (Instant feedback)
     setCompletedItemIds(updatedCompletedIds);
     if (shouldGrantXP) setClaimedXPIds(updatedClaimedXPIds);
 
@@ -276,14 +270,12 @@ const toggleCompletion = async () => {
       const progressRef = doc(db, `batches/${batchId}/user_progress`, userId);
       const userRef = doc(db, 'users', userId);
 
-      // Save progress to database
       batch.set(progressRef, { 
         completedItems: updatedCompletedIds,
         claimedXPIds: updatedClaimedXPIds,
         lastUpdated: serverTimestamp()
       }, { merge: true });
 
-      // If eligible, increment global XP
       if (shouldGrantXP) {
         batch.update(userRef, { 
           xp: increment(XP_REWARD) 
@@ -293,22 +285,19 @@ const toggleCompletion = async () => {
       await batch.commit();
       
       if (shouldGrantXP) {
-        setShowXpDialog(true); // Trigger the pop-up
+        setShowXpDialog(true);
       }
     } catch (err) {
       console.error("Failed to save progress:", err);
-      // 🚨 Rollback UI state if the database save fails
       setCompletedItemIds(completedItemIds);
       if (shouldGrantXP) setClaimedXPIds(claimedXPIds || []);
     }
   };
 
-  // 🚨 UPGRADED: Recalculate progress based on new 3-tier structure
   const courseProgress = useMemo(() => {
     let totalItems = 0;
-    const allCourseItemIds = new Set(); // 🚨 NEW: Track every valid ID in the course
+    const allCourseItemIds = new Set(); 
 
-    // 1. Map out all IDs that actually exist in the course right now
     modules.forEach(mod => {
       mod.chapters.forEach(chap => {
         if (chap.items) {
@@ -320,14 +309,10 @@ const toggleCompletion = async () => {
 
     if (totalItems === 0) return 0;
 
-    // 2. 🚨 THE FIX: Only count an ID if it's COMPLETED AND exists in the current curriculum
-    // This ignores "Zombie IDs" left over in your database from old tests.
     const validCompletions = completedItemIds.filter(id => allCourseItemIds.has(id));
     const uniqueCompletedCount = new Set(validCompletions).size;
 
-    // 3. Final calculation
     const progress = Math.round((uniqueCompletedCount / totalItems) * 100);
-    
     return Math.min(progress, 100); 
   }, [modules, completedItemIds]);
 
@@ -338,8 +323,10 @@ const toggleCompletion = async () => {
 
     const ytMatch = rawLink.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
     if (ytMatch && ytMatch[1]) return { type: 'youtube', id: ytMatch[1] };
+    
     const vimeoMatch = rawLink.match(/(?:vimeo\.com\/|video\/)(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) return { type: 'vimeo', id: vimeoMatch[1] };
+    
     if (rawLink.endsWith('.mp4') || rawLink.endsWith('.webm')) return { type: 'raw', url: rawLink };
 
     return { type: 'unknown', url: rawLink };
@@ -353,25 +340,29 @@ const toggleCompletion = async () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // UI Toggles
+  // 🚨 UI PERSISTENCE: Save open/close state to disk immediately
   const toggleModule = (id) => {
-    setExpandedModules(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+    setExpandedModules(prev => {
+      const next = prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id];
+      localStorage.setItem(`expanded_modules_${batchId}`, JSON.stringify(next));
+      return next;
+    });
   };
 
   const toggleChapter = (id) => {
-    setExpandedChapters(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+    setExpandedChapters(prev => {
+      const next = prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id];
+      localStorage.setItem(`expanded_chapters_${batchId}`, JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleItemClick = (item) => {
     setActiveItem(item);
+    localStorage.setItem(`active_item_${batchId}`, item.id);
     if (window.innerWidth < 1024) setIsNavOpen(false);
   };
 
-
-  // ------------------------------------------
-  // RENDER BLOCKS
-  // ------------------------------------------
-  
   if (isLoading) {
     return (
       <div className={`h-screen w-full flex flex-col items-center justify-center font-black uppercase tracking-widest ${isDarkMode ? 'bg-[#0B1121] text-indigo-500' : 'bg-slate-50 text-indigo-600'}`}>
@@ -381,7 +372,6 @@ const toggleCompletion = async () => {
     );
   }
 
-  // 🚨 UPGRADED NAVIGATION RENDER (3-TIER HIERARCHY)
   const renderNavigation = () => (
     <>
       {isNavOpen && <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden" onClick={() => setIsNavOpen(false)} />}
@@ -407,7 +397,6 @@ const toggleCompletion = async () => {
               return (
               <div key={mod.id} className={`border-b ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'}`}>
                 
-                {/* MODULE HEADER (SECTION) */}
                 <button 
                   onClick={() => !isModLocked && toggleModule(mod.id)} 
                   className={`w-full p-4 flex items-center justify-between transition-colors 
@@ -423,7 +412,6 @@ const toggleCompletion = async () => {
                   {!isModLocked && <ChevronDown size={18} className={`transition-transform duration-300 ${expandedModules.includes(mod.id) ? 'rotate-180 text-indigo-500' : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`} />}
                 </button>
 
-                {/* CHAPTERS CONTAINER */}
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedModules.includes(mod.id) ? 'max-h-[1500px]' : 'max-h-0'}`}>
                   <div className={`pb-2 ${isDarkMode ? 'bg-black/20' : 'bg-slate-50/50 shadow-inner'}`}>
                     
@@ -433,7 +421,6 @@ const toggleCompletion = async () => {
                       return (
                         <div key={chap.id} className="w-full">
                           
-                          {/* CHAPTER HEADER */}
                           <button 
                             onClick={() => !isChapLocked && toggleChapter(chap.id)} 
                             className={`w-full py-3 px-4 pl-6 flex items-center justify-between transition-colors border-l-2 border-transparent
@@ -449,7 +436,6 @@ const toggleCompletion = async () => {
                             {!isChapLocked && <ChevronDown size={16} className={`transition-transform duration-300 ${expandedChapters.includes(chap.id) ? 'rotate-180 text-indigo-400' : (isDarkMode ? 'text-slate-600' : 'text-slate-400')}`} />}
                           </button>
 
-                          {/* ITEMS CONTAINER */}
                           <div className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedChapters.includes(chap.id) ? 'max-h-[800px]' : 'max-h-0'}`}>
                             <div className={`pb-2 pt-1 ${isDarkMode ? 'bg-black/40' : 'bg-slate-100/30 border-y border-slate-100/50'}`}>
                               {chap.items.map(item => {
@@ -680,31 +666,28 @@ const toggleCompletion = async () => {
                 </div>
               </div>
               
-              {/* Find the "Mark as Complete" button in renderMainContent */}
-{/* --- 🚨 UPGRADED GREEN REWARD BUTTON --- */}
-{/* --- 🚨 MINIMALIST EMERALD BUTTON --- */}
-<button 
-  onClick={toggleCompletion}
-  className={`shrink-0 w-full md:w-auto px-8 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95
-    ${isComplete
-      ? (isDarkMode 
-          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-          : 'bg-emerald-50 text-emerald-600 border border-emerald-100')
-      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
-    }`}
->
-  {isComplete ? (
-    <>
-      <Check size={16} strokeWidth={3} />
-      <span>Completed</span>
-    </>
-  ) : (
-    <>
-      <CheckCircle2 size={16} />
-      <span>Mark as Complete</span>
-    </>
-  )}
-</button>
+              <button 
+                onClick={toggleCompletion}
+                className={`shrink-0 w-full md:w-auto px-8 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95
+                  ${isComplete
+                    ? (isDarkMode 
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                        : 'bg-emerald-50 text-emerald-600 border border-emerald-100')
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+                  }`}
+              >
+                {isComplete ? (
+                  <>
+                    <Check size={16} strokeWidth={3} />
+                    <span>Completed</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>Mark as Complete</span>
+                  </>
+                )}
+              </button>
             </div>
             
             <div className={`flex border-b mb-8 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -754,56 +737,52 @@ const toggleCompletion = async () => {
       {renderMainContent()}
       {renderChat()}
       <AnimatePresence>
-  {showXpDialog && (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
-      {/* Backdrop */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={() => setShowXpDialog(false)}
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-      />
+        {showXpDialog && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowXpDialog(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
 
-      {/* Dialog Card */}
-      <motion.div 
-        initial={{ scale: 0.9, opacity: 0, y: 20 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className={`relative max-w-sm w-full p-8 rounded-[2.5rem] shadow-2xl text-center border ${
-          isDarkMode ? 'bg-[#151E2E] border-slate-700' : 'bg-white border-slate-200'
-        }`}
-      >
-        {/* Floating Sparkles Icon */}
-        <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
-          <Sparkles size={40} className="animate-pulse" />
-        </div>
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className={`relative max-w-sm w-full p-8 rounded-[2.5rem] shadow-2xl text-center border ${
+                isDarkMode ? 'bg-[#151E2E] border-slate-700' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                <Sparkles size={40} className="animate-pulse" />
+              </div>
 
-        <h2 className={`text-2xl font-black mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-          Lecture Mastered!
-        </h2>
-        <p className="text-sm text-slate-500 font-bold mb-8 uppercase tracking-widest">
-          Content Completed Successfully
-        </p>
+              <h2 className={`text-2xl font-black mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Lecture Mastered!
+              </h2>
+              <p className="text-sm text-slate-500 font-bold mb-8 uppercase tracking-widest">
+                Content Completed Successfully
+              </p>
 
-        {/* XP Badge */}
-        <div className={`py-4 rounded-2xl mb-8 flex flex-col items-center justify-center ${
-          isDarkMode ? 'bg-[#0B1121]' : 'bg-slate-50'
-        }`}>
-          <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">XP Reward</span>
-          <span className="text-4xl font-black text-indigo-500">+{XP_REWARD}</span>
-        </div>
+              <div className={`py-4 rounded-2xl mb-8 flex flex-col items-center justify-center ${
+                isDarkMode ? 'bg-[#0B1121]' : 'bg-slate-50'
+              }`}>
+                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">XP Reward</span>
+                <span className="text-4xl font-black text-indigo-500">+{XP_REWARD}</span>
+              </div>
 
-        <button 
-          onClick={() => setShowXpDialog(false)}
-          className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
-        >
-          Got it, Sensei!
-        </button>
-      </motion.div>
-    </div>
-  )}
-</AnimatePresence>
+              <button 
+                onClick={() => setShowXpDialog(false)}
+                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+              >
+                Got it, Sensei!
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

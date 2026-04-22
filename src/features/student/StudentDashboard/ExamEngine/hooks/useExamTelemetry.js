@@ -23,14 +23,14 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
     };
   }
 
-  // 🚨 THE FIX: Wait until the exam is active to start the atomic clock!
+  // Wait until the exam is active to start the atomic clock!
   useEffect(() => {
     if (isActive) {
       setTelemetry(getInitialTelemetry());
       questionStartTime.current = Date.now();
       hoverStartTimes.current = {};
     }
-  }, [currentQuestionId, isActive]); // <-- Added isActive here
+  }, [currentQuestionId, isActive]);
 
   // Only attach listeners and track violations if the exam is ACTIVE
   useEffect(() => {
@@ -50,6 +50,12 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
     };
 
     const handleBlur = () => {
+      // 🚨 THE YOUTUBE BYPASS: Check if the user clicked inside an iframe!
+      // If the active element is an iframe, do NOT trigger a focus loss violation.
+      if (document.activeElement && document.activeElement.tagName.toLowerCase() === 'iframe') {
+        return; 
+      }
+
       sessionViolations.current.focusLosses += 1;
       const currentTotal = sessionViolations.current.focusLosses;
 
@@ -62,6 +68,7 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleBlur);
+    
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleBlur);
@@ -77,7 +84,7 @@ export function useExamTelemetry(currentQuestionId, onViolation, isActive = fals
       const newTimeline = [...prev.optionSelectionTimeline, { optionId, option: optionLabel, timestampSec }];
       const timeSinceLastClick = isFirst ? timestampSec : Number((timestampSec - prev.lastResponseTime).toFixed(1));
 
-      // 🚨 THE FIX: Bind the option label to the time so it reads beautifully in Firebase
+      // Bind the option label to the time so it reads beautifully in Firebase
       const displayLabel = optionLabel || `Option ${optionId}`;
       const formattedTimeLog = `${displayLabel}: ${timeSinceLastClick}s`;
 
