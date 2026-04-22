@@ -4,11 +4,12 @@ import {
   ArrowLeft, MessageSquare, PlayCircle, FileText, HelpCircle, 
   ChevronDown, Download, Send, PlaySquare, CheckCircle2, Clock, 
   PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, 
-  Check, Loader2, Lock, Sun, Moon, Sparkles
+  Check, Loader2, Lock, Sun, Moon, Sparkles, Flame, Snowflake
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { processUserActivity } from '@/utils/streakManager'; // Adjust the path if needed
 
 import { db, auth } from '@services/firebase'; 
 import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, writeBatch, increment } from 'firebase/firestore';
@@ -22,6 +23,11 @@ export default function LectureViewer() {
   const [showXpDialog, setShowXpDialog] = useState(false);
   const XP_REWARD = 20;
 
+  // 🚨 STREAK & FREEZE STATE
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [streakFreezes, setStreakFreezes] = useState(0);
+  const [showStreakAnimation, setShowStreakAnimation] = useState(false);
+
   const [isNavOpen, setIsNavOpen] = useState(window.innerWidth >= 1024);
   const [isChatOpen, setIsChatOpen] = useState(window.innerWidth >= 1280);
   const [activeTab, setActiveTab] = useStickyState('overview', `lectureviewer-tab-${batchId}`); 
@@ -31,7 +37,6 @@ export default function LectureViewer() {
   const [modules, setModules] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
   
-  // 🚨 UI PERSISTENCE: Load initial state from localStorage
   const [expandedModules, setExpandedModules] = useState(() => JSON.parse(localStorage.getItem(`expanded_modules_${batchId}`) || '[]'));
   const [expandedChapters, setExpandedChapters] = useState(() => JSON.parse(localStorage.getItem(`expanded_chapters_${batchId}`) || '[]'));
   
@@ -58,6 +63,10 @@ export default function LectureViewer() {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         const userData = userDoc.exists() ? userDoc.data() : {};
         
+        // 🚨 LOAD INITIAL STREAK & FREEZES
+        setCurrentStreak(userData.streak || 0);
+        setStreakFreezes(userData.streakFreezes || 0);
+
         const batchDoc = await getDoc(doc(db, 'batches', batchId));
         if (!batchDoc.exists()) {
            navigate('/student-dashboard');
@@ -130,7 +139,6 @@ export default function LectureViewer() {
         loadedModules.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setModules(loadedModules);
 
-        // 🚨 UI PERSISTENCE: Restore the active item
         const savedActiveId = localStorage.getItem(`active_item_${batchId}`);
         let foundSavedItem = null;
 
@@ -146,7 +154,6 @@ export default function LectureViewer() {
 
         if (foundSavedItem) {
           setActiveItem(foundSavedItem);
-          // If no folders were explicitly saved as open, open the folder of the saved item
           if (!localStorage.getItem(`expanded_modules_${batchId}`)) {
              setExpandedModules([foundSavedItem.modId]);
              localStorage.setItem(`expanded_modules_${batchId}`, JSON.stringify([foundSavedItem.modId]));
@@ -156,7 +163,6 @@ export default function LectureViewer() {
              localStorage.setItem(`expanded_chapters_${batchId}`, JSON.stringify([foundSavedItem.chapId]));
           }
         } else if (loadedModules.length > 0) {
-          // Fallback to opening the very first item if nothing is saved in memory
           const firstMod = loadedModules[0];
           const firstChap = firstMod.chapters[0];
           
@@ -241,6 +247,7 @@ export default function LectureViewer() {
     if (e.key === 'Enter') handleSendMessage();
   };
 
+  // 🚨 UPGRADED STREAK COMPLETION FUNCTION (NOW WITH FREEZES)
   const toggleCompletion = async () => {
     if (!activeItem || !auth.currentUser) return;
     const userId = auth.currentUser.uid;
@@ -262,33 +269,48 @@ export default function LectureViewer() {
       updatedClaimedXPIds = Array.from(new Set([...updatedClaimedXPIds, activeItem.id]));
     }
 
+    // Update local UI immediately for a snappy experience
     setCompletedItemIds(updatedCompletedIds);
     if (shouldGrantXP) setClaimedXPIds(updatedClaimedXPIds);
 
     try {
       const batch = writeBatch(db);
       const progressRef = doc(db, `batches/${batchId}/user_progress`, userId);
-      const userRef = doc(db, 'users', userId);
 
+      // 🚨 1. LET THE STREAK MANAGER HANDLE THE HEAVY LIFTING
+      if (shouldGrantXP) {
+        // This single line replaces all the Calendar math, freeze checking, and XP updating!
+        const result = await processUserActivity(XP_REWARD);
+        
+        if (result.success) {
+          // Update the badges in the header
+          setCurrentStreak(result.newStreak);
+          setStreakFreezes(result.newFreezes);
+          
+          if (result.streakUpdated) {
+            setShowStreakAnimation(true);
+            setTimeout(() => setShowStreakAnimation(false), 3000);
+          }
+        }
+      }
+
+      // 🚨 2. SAVE THE COURSE PROGRESS
       batch.set(progressRef, { 
         completedItems: updatedCompletedIds,
         claimedXPIds: updatedClaimedXPIds,
         lastUpdated: serverTimestamp()
       }, { merge: true });
 
-      if (shouldGrantXP) {
-        batch.update(userRef, { 
-          xp: increment(XP_REWARD) 
-        });
-      }
-
       await batch.commit();
       
+      // Trigger the success modal
       if (shouldGrantXP) {
         setShowXpDialog(true);
       }
+
     } catch (err) {
       console.error("Failed to save progress:", err);
+      // Revert the UI if Firebase fails
       setCompletedItemIds(completedItemIds);
       if (shouldGrantXP) setClaimedXPIds(claimedXPIds || []);
     }
@@ -340,7 +362,6 @@ export default function LectureViewer() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 🚨 UI PERSISTENCE: Save open/close state to disk immediately
   const toggleModule = (id) => {
     setExpandedModules(prev => {
       const next = prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id];
@@ -596,6 +617,27 @@ export default function LectureViewer() {
           </div>
           
           <div className="flex items-center gap-2">
+            {/* 🚨 STREAK FREEZE BADGE */}
+            {streakFreezes > 0 && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-black transition-all duration-500
+                ${isDarkMode ? 'bg-sky-500/10 text-sky-500 border-sky-500/20' : 'bg-sky-50 text-sky-600 border-sky-200'}
+              `}>
+                <Snowflake size={16} />
+                <span>{streakFreezes}</span>
+              </div>
+            )}
+
+            {/* 🚨 THE STREAK BADGE */}
+            {currentStreak > 0 && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-black transition-all duration-500
+                ${showStreakAnimation ? 'bg-orange-500 text-white border-orange-500 scale-110 shadow-lg shadow-orange-500/30' : 
+                isDarkMode ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' : 'bg-orange-50 text-orange-600 border-orange-200'}
+              `}>
+                <Flame size={16} className={showStreakAnimation ? 'animate-bounce' : ''} />
+                <span>{currentStreak}</span>
+              </div>
+            )}
+            
             <button onClick={toggleTheme} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-500 hover:bg-slate-100'}`}>
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>

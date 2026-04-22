@@ -146,7 +146,7 @@ export default function ExamResults({
       const analyticsPayload = generateExerciseAnalytics(analyticsInput);
 
       // 3. Save Ledger and Unlock Badges (First attempt check handles fairness automatically!)
-      await saveExamAndUnlockBadge(userId, batchId, exerciseId, analyticsPayload, isFirstAttempt);
+      await saveExamAndUnlockBadge(userId, batchId, exerciseId, analyticsPayload, isFirstAttempt, "exercise");
 
       // 4. Navigate to the final beautiful UI Dashboard
       navigate(`/analytics/${exerciseId}`, { state: { analytics: analyticsPayload, rawQuestions: rawQuestions, 

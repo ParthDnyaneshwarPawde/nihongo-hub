@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStudentSession } from './hooks/useStudentSession';
 import { useStudentNavigation } from './hooks/useStudentNavigation';
 import { useLogoutConfirm } from '@hooks/useLogoutConfirm';
+import { processUserActivity } from '@/utils/streakManager'; // Adjust path if needed
 
 import StudentSidebar from './layout/StudentSidebar';
 import StudentTopNav from './layout/StudentTopNav';
@@ -72,13 +73,25 @@ export default function StudentDashboard() {
   const onBeforeLogout = () => { setLevel('JLPT N5'); };
   const { isConfirming, requestLogout, cancelLogout, confirmLogout } = useLogoutConfirm({ onBeforeLogout });
 
-  const handlePasswordSubmit = (e) => {
+  // 🚨 1. Add 'async' here
+  const handlePasswordSubmit = async (e) => { 
     e.preventDefault();
+    
     if (selectedClass.status !== 'live') {
       setPasswordError("This session has ended or is not yet active.");
       return;
     }
+    
     if (!selectedClass.password || enteredPassword === selectedClass.password) {
+      
+      // 🚨 2. Trigger the Streak Engine! (Grants 50 XP)
+      try {
+        await processUserActivity(50); 
+      } catch (err) {
+        console.error("Failed to update streak:", err);
+      }
+
+      // 3. Unlock the room
       setIsPasswordModalOpen(false);
       setEnteredPassword("");
       navigate(`/room/${selectedClass.roomID}?type=${selectedClass.type}&role=student&pass=${enteredPassword}`);

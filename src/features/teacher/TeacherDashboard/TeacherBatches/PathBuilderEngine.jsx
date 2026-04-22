@@ -38,12 +38,16 @@ export default function PathBuilderEngine({ batchId }) {
   // -- UI Memory State --
   const [expandedModules, setExpandedModules] = useStickyState([], `expanded-mods-${batchId}`);
   const [expandedChapters, setExpandedChapters] = useStickyState([], `expanded-chaps-${batchId}`);
+
+  // -- Vault Integration State --
+  const [vaultResources, setVaultResources] = useState([]); // Master list from the batch
+  const [editorResources, setEditorResources] = useState([]); // Selected for current item
   
   const [quizPrompt, setQuizPrompt] = useState('');
-  const [quizOptions, setQuizOptions] = useState([
-    {id: 1, text: '', isCorrect: true}, 
-    {id: 2, text: '', isCorrect: false}
-  ]);
+  // const [quizOptions, setQuizOptions] = useState([
+  //   {id: 1, text: '', isCorrect: true}, 
+  //   {id: 2, text: '', isCorrect: false}
+  // ]);
 
   // ----------------------------------------------------
   // 📥 INITIAL FETCH 
@@ -102,6 +106,12 @@ export default function PathBuilderEngine({ batchId }) {
             isExpanded: true,
             chapters: chapters.sort((a, b) => a.order - b.order)
           });
+
+          const batchRef = doc(db, 'batches', batchId);
+          const batchSnap = await getDoc(batchRef);
+          if (batchSnap.exists()) {
+            setVaultResources(batchSnap.data().resources || []);
+          }
         }
         
         setCurriculum(loadedCurriculum.sort((a, b) => a.order - b.order));

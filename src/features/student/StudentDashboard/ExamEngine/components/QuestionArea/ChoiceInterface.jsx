@@ -12,7 +12,7 @@ export default function ChoiceInterface({ currentQ, currentState, settings, tele
   const shouldShowResults = hasAnswered || isAttempt1Failed;
   const showStats = shouldShowResults && (settings?.showPeerStats ?? true);
   
-  const totalVotes = currentQ.options.reduce((sum, o) => 
+  const totalVotes = (currentQ.options || []).reduce((sum, o) => 
     sum + (o.count || o.votes || o.votedCount || 0), 0
   );
   
@@ -39,12 +39,14 @@ export default function ChoiceInterface({ currentQ, currentState, settings, tele
     return { type: 'text', url: null };
   };
 
-  const hasAnyMedia = currentQ.options.some(opt => getMediaType(opt).type !== 'text');
+  const hasAnyMedia = (currentQ.options || []).some(opt => getMediaType(opt).type !== 'text');
 
   return (
     <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-6 w-full`}>
-      {currentQ.options.map((opt, idx) => {
-        const isSelected = currentState.selectedOptions.includes(opt.id);
+      {(currentQ.options || []).map((opt, idx) => {
+        // 🚨 THE CRASH FIX:
+        const isSelected = (currentState?.selectedOptions || []).includes(opt.id);
+        
         const media = getMediaType(opt);
         const isTextOnly = media.type === 'text';
         
@@ -53,9 +55,14 @@ export default function ChoiceInterface({ currentQ, currentState, settings, tele
           opt.isCorrect === true || 
           opt.isCorrect === 'true';
         
-        // Base Styling
-        let btnClass = isDarkMode ? 'bg-slate-800/40 border-slate-700/50 text-slate-300' : 'bg-white border-slate-200 text-slate-700';
-        let letterBg = isDarkMode ? 'bg-slate-700/50 text-slate-400' : 'bg-slate-100 text-slate-500';
+        // Base Styling (Now with Hover Effects)
+        let btnClass = isDarkMode 
+          ? 'bg-slate-800/40 border-slate-700/50 text-slate-300 hover:border-indigo-400/50 hover:bg-slate-800/80' 
+          : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50/30 hover:shadow-md';
+
+        let letterBg = isDarkMode 
+          ? 'bg-slate-700/50 text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400' 
+          : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600';
 
         // Feedback Styling
         if (shouldShowResults) {
@@ -83,14 +90,27 @@ export default function ChoiceInterface({ currentQ, currentState, settings, tele
           <button
             key={opt.id}
             disabled={shouldShowResults} 
-            onClick={() => {
-              toggleOption(opt.id, isMulti);
-              telemetry.recordOptionClick(opt.id, opt.text || "Option");
+            
+            // 🚨 TELEMETRY: Hooking up the hover timers
+            onMouseEnter={() => {
+              if (telemetry?.handleMouseEnter) telemetry.handleMouseEnter(opt.id);
             }}
-            className={`relative overflow-hidden rounded-2xl border-2 transition-all text-left flex flex-col p-5 ${isTextOnly ? 'min-h-[80px]' : 'min-h-[160px]'} ${btnClass} ${isAttempt1Failed && isSelected && !isOptCorrect ? 'opacity-50 grayscale' : ''}`}
+            onMouseLeave={() => {
+              if (telemetry?.handleMouseLeave) telemetry.handleMouseLeave(opt.id);
+            }}
+
+            onClick={() => {
+              // Ensure we log the hover time if they click before moving the mouse away
+              if (telemetry?.handleMouseLeave) telemetry.handleMouseLeave(opt.id);
+              
+              toggleOption(opt.id, isMulti);
+              if (telemetry?.recordOptionClick) telemetry.recordOptionClick(opt.id, opt.text || "Option");
+            }}
+            
+            className={`group relative overflow-hidden rounded-2xl border-2 transition-all duration-300 text-left flex flex-col p-5 ${isTextOnly ? 'min-h-[80px]' : 'min-h-[160px]'} ${btnClass} ${isAttempt1Failed && isSelected && !isOptCorrect ? 'opacity-50 grayscale' : ''}`}
           >
             <div className="flex items-center gap-4 w-full relative z-10">
-              <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 transition-all ${letterBg}`}>
+              <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 transition-all duration-300 ${letterBg}`}>
                 {['A', 'B', 'C', 'D', 'E', 'F'][idx]}
               </span>
               {displayText && <span className={`font-bold flex-1 leading-snug ${textSizeClass}`}>{displayText}</span>}

@@ -18,8 +18,8 @@ export function useExamSession(questions) {
           wasSkippedInitially: false,
           revisited: false,
           attempts: [],
-          userNote: '', // 🚨 THE FIX: Initialize the note string so React tracks it immediately
-          isSecondAttempt: false // 🚨 NEW: Initialize the attempt tracker cleanly
+          userNote: '', 
+          isSecondAttempt: false 
         }
       };
     });
@@ -27,7 +27,6 @@ export function useExamSession(questions) {
 
   const currentQ = questions[currentIndex];
 
-  // 🚨 YOUR REQUESTED FORMAT
   const currentState = currentQ ? questionStates[currentQ.id] : null;
 
   const toggleOption = (optionId, isMulti) => {
@@ -37,19 +36,21 @@ export function useExamSession(questions) {
     setQuestionStates(prev => {
       const state = prev[qId];
       
-      // 🚨 BOUNCER: If the state doesn't exist yet, do nothing. 
-      // This prevents "Cannot read properties of undefined"
+      // BOUNCER: If the state doesn't exist yet, do nothing. 
       if (!state) return prev; 
 
-      // 🚨 THE FIX: Block clicks if completed OR waiting for a retry!
+      // Block clicks if completed OR waiting for a retry!
       if (state.status === 'completed' || state.status === 'attempt1_failed') return prev; 
 
       let newSelection = [];
       
+      // 🚨 THE CRASH FIX: We force it to be an array even if the old draft loaded it as undefined
+      const currentOptions = state.selectedOptions || [];
+      
       if (isMulti) {
-        newSelection = state.selectedOptions.includes(optionId)
-          ? state.selectedOptions.filter(id => id !== optionId)
-          : [...state.selectedOptions, optionId];
+        newSelection = currentOptions.includes(optionId)
+          ? currentOptions.filter(id => id !== optionId)
+          : [...currentOptions, optionId];
       } else {
         newSelection = [optionId];
       }
@@ -61,23 +62,20 @@ export function useExamSession(questions) {
   const clearSelection = (qId) => {
     setQuestionStates(prev => {
       const state = prev[qId];
-      // 🚨 BOUNCER: Guard against null/undefined state
+      // BOUNCER: Guard against null/undefined state
       if (!state || state.status === 'completed') return prev; 
       
-      // 🚨 THE FIX: Reset the interactive properties, but spread the ...state 
-      // first so the userNote and hintViewed status are perfectly preserved!
       return { 
         ...prev, 
         [qId]: { 
           ...state, 
-          status: 'idle', // Resets so they can try again
-          selectedOptions: [] // Clears the UI selection
+          status: 'idle', 
+          selectedOptions: [] 
         } 
       };
     });
   };
 
-  // 🚨 BOUNCER: Using Optional Chaining and Fallbacks for safe updates
   const markHintViewed = (qId) => setQuestionStates(prev => {
     if (!prev[qId]) return prev;
     return { ...prev, [qId]: { ...prev[qId], hintViewed: true } };

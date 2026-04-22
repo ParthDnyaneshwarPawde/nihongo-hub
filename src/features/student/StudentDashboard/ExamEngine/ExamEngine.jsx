@@ -82,11 +82,25 @@ export default function ExamEngine() {
 
   useEffect(() => { localStorage.setItem('nihongo_settings', JSON.stringify(settings)); }, [settings]);
   
-  useEffect(() => {
-    if (exerciseId) {
-      const saved = localStorage.getItem(`exam_draft_${exerciseId}`);
-      if (saved) session.setQuestionStates(JSON.parse(saved));
-    }
+  // 🚨 FIX: Load both temporary draft AND permanent notes
+  useEffect(() => { 
+    if (exerciseId) { 
+      const savedDraft = localStorage.getItem(`exam_draft_${exerciseId}`); 
+      const savedNotes = localStorage.getItem(`exam_notes_${exerciseId}`);
+      
+      let draft = savedDraft ? JSON.parse(savedDraft) : {};
+      let notes = savedNotes ? JSON.parse(savedNotes) : {};
+      
+      // Inject persistent notes into the current session
+      Object.keys(notes).forEach(qId => {
+        if (!draft[qId]) draft[qId] = {};
+        draft[qId].userNote = notes[qId];
+      });
+
+      if (Object.keys(draft).length > 0) {
+        session.setQuestionStates(draft); 
+      }
+    } 
   }, [exerciseId, session.setQuestionStates]);
 
   useEffect(() => {
@@ -422,7 +436,18 @@ if (hasDraft || hasTimer) {
     session.setQuestionStates(prev => ({ ...prev, [session.currentQ.id]: { ...prev[session.currentQ.id], userNote: noteText } }));
   };
 
-  const closeAndSaveNote = () => { handleSaveUserNote(localNote); setIsNotesOpen(false); };
+  const closeAndSaveNote = () => {
+  handleSaveUserNote(localNote); 
+
+  // 🚨 The Permanent Vault save
+  if (session.currentQ) {
+    const existingNotes = JSON.parse(localStorage.getItem(`exam_notes_${exerciseId}`) || '{}');
+    existingNotes[session.currentQ.id] = localNote;
+    localStorage.setItem(`exam_notes_${exerciseId}`, JSON.stringify(existingNotes));
+  }
+
+  setIsNotesOpen(false); 
+};
 
   const handleReattempt = () => {
     localStorage.removeItem(`exam_draft_${exerciseId}`);
