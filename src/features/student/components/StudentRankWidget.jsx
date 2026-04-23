@@ -154,7 +154,7 @@ export default function StudentRankWidget({ isCollapsed }) {
             {/* Bottom Row: Ultra-thin Progress Bar */}
             <div className="relative z-10">
               <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-slate-500 mb-1.5">
-                <span>Next Level</span>
+                <span>Next Rank</span>
                 <span style={{ color: rank.color }}>{Math.round(rank.percentage)}%</span>
               </div>
               <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'} shadow-inner`}>

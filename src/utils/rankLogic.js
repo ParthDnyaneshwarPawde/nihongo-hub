@@ -81,32 +81,40 @@ export const RANKS_CONFIG = [
 export const calculateRank = (xp) => {
   const currentXP = Number(xp) || 0;
   
+  // 1. Find the current rank object
   let rankIndex = RANKS_CONFIG.findIndex(r => currentXP >= r.minXP && currentXP < r.maxXP);
   
-  // Lock them at Sensei if they exceed 200,000 XP
-  if (rankIndex === -1 && currentXP >= 200000) rankIndex = RANKS_CONFIG.length - 1;
-  if (rankIndex === -1) rankIndex = 0; 
+  // Handling max-level lock (Sensei) or underflow
+  if (rankIndex === -1) {
+    if (currentXP >= 200000) {
+      rankIndex = RANKS_CONFIG.length - 1;
+    } else {
+      rankIndex = 0;
+    }
+  }
 
   const rank = RANKS_CONFIG[rankIndex];
   
+  // 2. Setup progress windows
   const cappedXP = Math.min(currentXP, rank.maxXP);
   const range = rank.maxXP - rank.minXP;
-  const relativeXP = cappedXP - rank.minXP;
+  const relativeXP = Math.max(0, cappedXP - rank.minXP);
   
-  // Sub-Levels (L1 to L5)
-  let levelProgress = relativeXP / range;
-  if (levelProgress >= 1) levelProgress = 0.9999; 
-  const levelNumber = Math.min(Math.floor(levelProgress * 5) + 1, 5);
+  // 3. Sub-Level Label (L1 to L5) - Keep this for the text only
+  let levelProgressRatio = relativeXP / range;
+  if (levelProgressRatio >= 1) levelProgressRatio = 0.9999; 
+  const levelNumber = Math.min(Math.floor(levelProgressRatio * 5) + 1, 5);
   
-  const segmentSize = 1 / 5;
-  const currentSegmentStart = (levelNumber - 1) * segmentSize;
-  const percentageInLevel = ((levelProgress - currentSegmentStart) / segmentSize) * 100;
+  // 4. THE FIX: Continuous Progress Percentage
+  // This calculates the distance through the FULL rank window (0-100%)
+  const continuousPercentage = (relativeXP / range) * 100;
 
   return {
     ...rank,
     rankIndex,
     level: `L${levelNumber}`,
-    percentage: Math.max(0, Math.min(100, percentageInLevel)), 
+    // Ensure percentage is clamped between 0 and 100
+    percentage: Math.max(0, Math.min(100, continuousPercentage)), 
     xpRemaining: Math.max(0, rank.maxXP - currentXP), 
     currentXP
   };

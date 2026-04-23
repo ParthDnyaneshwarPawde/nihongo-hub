@@ -9,9 +9,12 @@ import {
 import { useStickyState } from '@hooks/useStickyState';
 
 import { db } from '@services/firebase'; 
-import { collection, addDoc, serverTimestamp, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, getDoc, serverTimestamp, doc, updateDoc, increment, getDocs, deleteDoc, writeBatch } from 'firebase/firestore';
 
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+// import { useVaultResources } from './hooks/useVaultResources';
+import { motion } from 'framer-motion';
+
 
 export default function PathBuilderEngine({ batchId }) {
   const { isDarkMode } = useTheme();
@@ -222,6 +225,7 @@ export default function PathBuilderEngine({ batchId }) {
         type: editorType,
         isLocked: editorIsLocked,
         updatedAt: serverTimestamp(),
+        resources: editorResources,
       };
 
       if (editorType === 'video') {
@@ -393,6 +397,7 @@ export default function PathBuilderEngine({ batchId }) {
       setEditorTitle(existingItem.title || '');
       setEditorDescription(existingItem.description || '');
       setEditorIsLocked(existingItem.isLocked ?? true);
+      setEditorResources(existingItem.resources || []);
       if (type === 'video') {
         setEditorLink(existingItem.vimeoLink || '');
         setEditorDuration(existingItem.duration || '');
@@ -407,6 +412,7 @@ export default function PathBuilderEngine({ batchId }) {
       setEditorDuration('');
       setEditorContent('');
       setEditorIsLocked(true); 
+      setEditorResources([]);
     }
 
     setEditorType(type);
@@ -652,6 +658,103 @@ export default function PathBuilderEngine({ batchId }) {
                 </div>
               </div>
             )}
+            {/* 📂 RESOURCE VAULT CONNECTOR */}
+            {/* 📂 RESOURCE VAULT CONNECTOR */}
+            <div className="pt-8 border-t border-slate-700/30 space-y-6">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500 flex items-center gap-2 mb-4">
+                  <LinkIcon size={14}/> Attached Resources ({editorResources.length})
+                </label>
+                
+                {/* 1. CURRENTLY ATTACHED LIST */}
+                <div className="space-y-3">
+                  {editorResources.length > 0 ? (
+                    editorResources.map((res, index) => (
+                      <motion.div 
+                        initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                        key={index} 
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between group ${
+                          isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-white border-slate-200 shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="w-10 h-10 shrink-0 bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center border border-indigo-500/10">
+                            <FileText size={18}/>
+                          </div>
+                          <div className="truncate">
+                            {/* 🚨 UPDATED TO res.title */}
+                            <p className={`text-sm font-bold truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{res.title}</p>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">{res.size || '0.0 MB'}</p>
+                          </div>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setEditorResources(prev => prev.filter((_, i) => i !== index))}
+                          className={`p-2 rounded-lg transition-all ${
+                            isDarkMode ? 'hover:bg-rose-500/20 text-slate-500 hover:text-rose-500' : 'hover:bg-rose-50 text-slate-400 hover:text-rose-600'
+                          }`}
+                        >
+                          <X size={18} />
+                        </button>
+                      </motion.div>
+                    ))
+                  ) : (
+                    <div className={`py-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">No resources linked to this item</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. THE MASTER VAULT PICKER */}
+              <div className={`rounded-[2rem] border p-6 ${isDarkMode ? 'bg-black/40 border-slate-800' : 'bg-slate-50/50 border-slate-200 shadow-inner'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">Available in Master Vault</p>
+                  <span className="text-[8px] bg-indigo-500/10 text-indigo-500 px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Live Sync</span>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                  {vaultResources.length > 0 ? (
+                    vaultResources
+                      // Filter logic: Checks fileUrl to prevent duplicates
+                      .filter(vr => !editorResources.some(er => er.fileUrl === vr.fileUrl))
+                      .map((res, idx) => (
+                        <button 
+                          key={idx}
+                          type="button"
+                          onClick={() => setEditorResources(prev => [...prev, res])}
+                          className={`w-full p-3 rounded-xl border border-dashed flex items-center justify-between text-left group transition-all
+                            ${isDarkMode 
+                              ? 'border-slate-700/50 hover:border-indigo-500 hover:bg-indigo-500/5' 
+                              : 'border-slate-300 hover:border-indigo-400 hover:bg-white hover:shadow-md'
+                            }`}
+                        >
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="p-1.5 rounded-lg bg-slate-500/10 text-slate-500 group-hover:text-indigo-500 group-hover:bg-indigo-500/10 transition-colors">
+                              <Plus size={14} />
+                            </div>
+                            {/* 🚨 UPDATED TO res.title */}
+                            <span className={`text-xs font-bold truncate ${isDarkMode ? 'text-slate-400 group-hover:text-white' : 'text-slate-600 group-hover:text-indigo-900'}`}>
+                              {res.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                             <span className="text-[8px] font-black text-slate-500 uppercase opacity-0 group-hover:opacity-100 transition-opacity">Attach</span>
+                             <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40 group-hover:bg-indigo-500 group-hover:animate-pulse"></div>
+                          </div>
+                        </button>
+                      ))
+                  ) : (
+                    <div className="text-center py-6">
+                      <div className="w-12 h-12 bg-slate-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 text-slate-600">
+                        <Layers size={20} />
+                      </div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase italic">Vault is currently empty</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className={`p-6 border-t shrink-0 space-y-4 ${isDarkMode ? 'border-slate-800 bg-[#151E2E]' : 'border-slate-200 bg-white'}`}>

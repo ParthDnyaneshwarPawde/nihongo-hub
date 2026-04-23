@@ -1,15 +1,16 @@
-// src/utils/analyticsEngine.js
-
 /**
- * Calculates if the time spent was Fast, Slow, or Balanced.
- * "Fast" is < 50% of expected time.
- * "Slow" is > 150% of expected time.
+ * Calculates Expected Time based on Question Type.
  */
+function getExpectedTime(qType) {
+  if (qType === 'kanji_draw') return 15;
+  if (qType === 'text_input') return 12;
+  if (qType === 'multiple_choice') return 10;
+  return 8; // single_choice default
+}
+
 function getSpeedCategory(timeSpent, expectedTime) {
-  // Fallback to 20 seconds if for some reason the DB document is missing it
-  const expected = expectedTime || 20; 
-  if (timeSpent < expected * 0.5) return 'FAST';
-  if (timeSpent > expected * 1.5) return 'SLOW';
+  if (timeSpent < expectedTime * 0.5) return 'FAST';
+  if (timeSpent > expectedTime * 1.5) return 'SLOW';
   return 'BALANCED';
 }
 
@@ -19,121 +20,183 @@ export function generateExerciseAnalytics(questions) {
   const totalQuestions = questions.length;
   let correctCount = 0;
   let totalTimeSpent = 0;
-  let firstAttemptCorrect = 0;
-  let secondAttemptCorrect = 0;
+  let totalPointsEarned = 0;
+  let maxPossiblePoints = 0;
 
-  // Behavior Trackers
+  // Global Behavior Trackers
   const behaviors = {
-    fastAndWrong: 0,
-    slowAndCorrect: 0,
-    slowAndWrong: 0,
-    fastAndCorrect: 0,
-    changedToWrong: 0,
-    changedToCorrect: 0,
-    noChangeCorrect: 0,
-    noChangeWrong: 0,
+    fastAndWrong: 0, slowAndCorrect: 0, slowAndWrong: 0, fastAndCorrect: 0, balanced: 0,
+    changedToCorrect: 0, changedToWrong: 0, noChangeCorrect: 0, blindGuess: 0, tooManyChanges: 0,
+    firstTryCorrect: 0, secondTryCorrect: 0, wrongBothTries: 0,
+    hesitatedOnCorrect: 0, lowHoverGuess: 0,
+    highlyDistracted: 0, strategicSkips: 0, hintCrutch: 0
   };
 
   const topicStats = {};
+  const processedQuestions = []; // We will store the augmented questions here
 
-  // 1. 🔄 PROCESS EVERY QUESTION
+  // ==========================================
+  // 1. 🔄 PROCESS EVERY QUESTION DOCUMENT
+  // ==========================================
   questions.forEach((q) => {
-    const timeSpent = q.timeSpentSec || 0;
-    
-    // Read the expected time directly from your database document
-    const expectedTime = q.expectedTime || q.expectedTimeSec; 
-    const speedCat = getSpeedCategory(timeSpent, expectedTime); 
-    
+    const isCorrect = q.isCorrect || false;
+    const timeSpent = q.timeSpentInSeconds || 0;
+    const changes = q.changeCount || 0;
+    const changedAnswer = q.changedAnswer || false;
+    const attempts = q.attempts || {};
+    const hoverTime = q.hoverTime || {};
+    const correctOptions = q.correctOptions || [];
+    const points = q.pointsEarned || 0;
+    const maxPoints = q.points || 4;
+    const expectedTime = getExpectedTime(q.questionType);
+    const speedCat = getSpeedCategory(timeSpent, expectedTime);
+
+    // Advanced Fields
+    const tabSwitches = q.tabSwitchedCount || 0;
+    const focusLost = q.focusLostCount || 0;
+    const hintUsed = q.hintViewed || false;
+    const skippedInitially = q.wasSkippedInitially || false;
+    const timeline = q.optionSelectionTimeline || [];
+
     totalTimeSpent += timeSpent;
+    totalPointsEarned += points;
+    maxPossiblePoints += maxPoints;
 
     // Topic Aggregation
-    if (!topicStats[q.topic]) topicStats[q.topic] = { total: 0, correct: 0, time: 0 };
-    topicStats[q.topic].total += 1;
-    topicStats[q.topic].time += timeSpent;
+    const topic = q.topic || 'Uncategorized';
+    if (!topicStats[topic]) topicStats[topic] = { total: 0, correct: 0, time: 0 };
+    topicStats[topic].total += 1;
+    topicStats[topic].time += timeSpent;
 
-    if (q.isCorrect) {
+    // ==========================================
+    // 🧬 PER-QUESTION ADVANCED ANALYSIS INJECTION
+    // ==========================================
+    let qInsights = [];
+    
+    // 1. Integrity Check
+    if (tabSwitches > 0 || focusLost > 0) {
+      qInsights.push({ type: 'danger', title: 'Focus Lost', desc: `You switched tabs or lost focus ${tabSwitches + focusLost} times during this question.`});
+      behaviors.highlyDistracted++;
+    }
+
+    // 2. Strategy Check
+    if (skippedInitially && isCorrect) {
+      qInsights.push({ type: 'success', title: 'Strategic Return', desc: 'You skipped this initially and came back to get it right. Excellent time management!'});
+      behaviors.strategicSkips++;
+    } else if (skippedInitially && !isCorrect) {
+      qInsights.push({ type: 'warning', title: 'Difficult Concept', desc: 'You skipped this and still struggled. Review this topic deeply.'});
+    }
+
+    // 3. Hint Usage
+    if (hintUsed && isCorrect) {
+      qInsights.push({ type: 'info', title: 'Hint Assisted', desc: 'You used a hint to get this correct. Try to solve it raw next time.'});
+    } else if (hintUsed && !isCorrect) {
+      qInsights.push({ type: 'danger', title: 'Ineffective Hint', desc: 'Even with the hint, you missed this. This is a critical weak point.'});
+      behaviors.hintCrutch++;
+    }
+
+    // 4. Timeline/Hesitation Check
+    if (timeline.length > 1 && q.firstResponseTime) {
+      const timeToChange = q.lastResponseTime - q.firstResponseTime;
+      if (timeToChange > (expectedTime * 0.5)) {
+        qInsights.push({ type: 'warning', title: 'High Hesitation', desc: `You selected an answer at ${q.firstResponseTime}s, but spent ${timeToChange.toFixed(1)}s doubting yourself before your final choice.`});
+      }
+    }
+
+    // Attach to the question object
+    const augmentedQuestion = {
+      ...q,
+      advancedAnalysis: {
+        speedCategory: speedCat,
+        integrityScore: Math.max(0, 100 - (tabSwitches * 20) - (focusLost * 10)),
+        perQuestionInsights: qInsights
+      }
+    };
+    processedQuestions.push(augmentedQuestion);
+
+    // ==========================================
+    // 🎯 APPLYING GLOBAL MATRIX LOGIC
+    // ==========================================
+    if (isCorrect) {
       correctCount++;
-      topicStats[q.topic].correct += 1;
-      
-      if (q.attemptsNeeded === 1) firstAttemptCorrect++;
-      if (q.attemptsNeeded === 2) secondAttemptCorrect++;
-
+      topicStats[topic].correct += 1;
       if (speedCat === 'FAST') behaviors.fastAndCorrect++;
-      if (speedCat === 'SLOW') behaviors.slowAndCorrect++;
+      else if (speedCat === 'SLOW') behaviors.slowAndCorrect++;
+      else behaviors.balanced++;
 
-      if (q.changedAnswer) behaviors.changedToCorrect++;
+      if (changedAnswer) behaviors.changedToCorrect++;
       else behaviors.noChangeCorrect++;
+
+      if (attempts.firstAttemptCorrect) behaviors.firstTryCorrect++;
+      else if (attempts.secondAttemptCorrect) behaviors.secondTryCorrect++;
     } else {
       if (speedCat === 'FAST') behaviors.fastAndWrong++;
-      if (speedCat === 'SLOW') behaviors.slowAndWrong++;
+      else if (speedCat === 'SLOW') behaviors.slowAndWrong++;
 
-      if (q.changedAnswer) behaviors.changedToWrong++;
-      else behaviors.noChangeWrong++;
+      if (changedAnswer) behaviors.changedToWrong++;
+      if (!changedAnswer && speedCat === 'FAST') behaviors.blindGuess++;
+      if (!attempts.firstAttemptCorrect && !attempts.secondAttemptCorrect) behaviors.wrongBothTries++;
+
+      let totalHoverTime = 0;
+      let hoveredCorrectOption = false;
+      Object.entries(hoverTime).forEach(([key, time]) => {
+        totalHoverTime += time;
+        if (correctOptions.includes(Number(key)) || correctOptions.includes(key)) {
+          if (time > 0.5) hoveredCorrectOption = true;
+        }
+      });
+      if (hoveredCorrectOption) behaviors.hesitatedOnCorrect++;
+      if (totalHoverTime < 1 && speedCat === 'FAST') behaviors.lowHoverGuess++;
     }
+    if (changes > 2) behaviors.tooManyChanges++;
   });
 
   const accuracy = correctCount / totalQuestions;
   const avgTimePerQuestion = totalTimeSpent / totalQuestions;
 
-  // 2. 🎭 DETERMINE BEHAVIOR BADGE (Persona)
+  // ==========================================
+  // 2. 🎭 DETERMINE GLOBAL BEHAVIOR BADGE
+  // ==========================================
   let earnedBadge = null;
-  
-  if (behaviors.fastAndCorrect >= totalQuestions * 0.5) {
-    earnedBadge = { id: "sharpshooter", name: "Sharpshooter", icon: "🎯", desc: "Fast and highly accurate." };
+  if (behaviors.highlyDistracted >= Math.max(2, totalQuestions * 0.2)) {
+    earnedBadge = { id: "distracted", name: "Distracted", icon: "👀", desc: "High tab switching and focus loss. Stay in the zone!" };
   } else if (behaviors.fastAndWrong >= totalQuestions * 0.4) {
-    earnedBadge = { id: "speedster", name: "Speedster", icon: "⚡", desc: "Fast, but error-prone. Slow down!" };
+    earnedBadge = { id: "speedster", name: "Speedster", icon: "⚡", desc: "You answer fast, but errors slip through. Slow down!" };
+  } else if (behaviors.fastAndCorrect >= totalQuestions * 0.5) {
+    earnedBadge = { id: "sharpshooter", name: "Sharpshooter", icon: "🎯", desc: "Fast and flawlessly accurate. Pure mastery." };
   } else if (behaviors.slowAndCorrect >= totalQuestions * 0.5) {
-    earnedBadge = { id: "thinker", name: "Thinker", icon: "🧠", desc: "Accurate, but takes time." };
-  } else if (behaviors.changedToWrong >= totalQuestions * 0.3) {
-    earnedBadge = { id: "overthinker", name: "Overthinker", icon: "🤯", desc: "Changed correct answers to wrong ones." };
-  } else if (behaviors.fastAndWrong + behaviors.noChangeWrong >= totalQuestions * 0.5) {
-    earnedBadge = { id: "guesser", name: "Guesser", icon: "🎲", desc: "Low time spent + incorrect answers." };
+    earnedBadge = { id: "thinker", name: "Thinker", icon: "🧠", desc: "Highly accurate, but you take your time analyzing." };
+  } else if (behaviors.tooManyChanges >= Math.max(2, totalQuestions * 0.2) || behaviors.changedToWrong >= 2) {
+    earnedBadge = { id: "overthinker", name: "Overthinker", icon: "🤯", desc: "You doubt yourself and change correct answers." };
+  } else if (behaviors.blindGuess >= totalQuestions * 0.3 || behaviors.lowHoverGuess >= 2) {
+    earnedBadge = { id: "guesser", name: "Guesser", icon: "🎲", desc: "Clicking without reading fully. Time to focus!" };
   } else {
-    earnedBadge = { id: "balanced", name: "Balanced Student", icon: "⚖️", desc: "Steady pace and steady accuracy." };
+    earnedBadge = { id: "balanced", name: "Tactician", icon: "⚖️", desc: "A perfectly balanced mix of speed and accuracy." };
   }
 
-  // 3. 🧠 GENERATE SMART INSIGHTS
-  const generatedInsights = [];
+  // ==========================================
+  // 3. 🧠 GENERATE GLOBAL SMART INSIGHTS
+  // ==========================================
+  const insights = [];
+  if (behaviors.strategicSkips > 0) insights.push({ type: "success", text: "Great exam strategy! You skipped hard questions and successfully returned to them." });
+  if (behaviors.hintCrutch > 1) insights.push({ type: "danger", text: "You are relying on hints but still missing questions. Deep review needed." });
+  if (behaviors.fastAndWrong > 1) insights.push({ type: "warning", text: "You’re rushing—slow down and think before answering." });
+  if (behaviors.slowAndCorrect > 1) insights.push({ type: "info", text: "Good job! You’re accurate, but try to improve speed." });
+  if (behaviors.changedToWrong > 0) insights.push({ type: "danger", text: "You changed a correct answer—trust your first instinct." });
 
-  // Speed vs Accuracy Insights
-  if (behaviors.fastAndWrong >= 2) generatedInsights.push({ type: "warning", text: "⚡ You’re rushing—slow down and think before answering." });
-  if (behaviors.slowAndCorrect >= 2) generatedInsights.push({ type: "success", text: "🎯 Careful Thinking! You’re accurate, but try to improve speed." });
-  if (behaviors.slowAndWrong >= 2) generatedInsights.push({ type: "danger", text: "🤯 You’re spending a lot of time but still unsure. Revise these topics." });
-  if (behaviors.fastAndCorrect >= 2) generatedInsights.push({ type: "success", text: "🧠 Mastery! You know this material extremely well." });
-
-  // Answer Behavior Insights
-  if (behaviors.changedToWrong > 1) generatedInsights.push({ type: "warning", text: "😵 You changed a correct answer—trust your first instinct." });
-  if (behaviors.changedToCorrect > 1) generatedInsights.push({ type: "success", text: "🔄 Nice recovery! You caught your mistakes." });
-
-  // Attempt Insights 
-  if (secondAttemptCorrect > firstAttemptCorrect) generatedInsights.push({ type: "info", text: "📈 You rely on second attempts. Take a breath before your first click." });
-
-  // Weak Topic Recommendation
-  let weakestTopic = null;
-  let lowestAcc = 1;
-  Object.keys(topicStats).forEach(topic => {
-    const acc = topicStats[topic].correct / topicStats[topic].total;
-    if (acc < lowestAcc) {
-      lowestAcc = acc;
-      weakestTopic = topic;
-    }
-  });
-
-  if (weakestTopic && lowestAcc <= 0.6) {
-    const formattedTopic = weakestTopic.replace('_', ' ').toUpperCase();
-    generatedInsights.push({ type: "action", text: `📉 Recommendation: Focus your next session on ${formattedTopic}.` });
-  }
-
-  // Sort by priority (warnings/dangers first) and take the top 3
   const priorityOrder = { danger: 1, warning: 2, action: 3, success: 4, info: 5 };
-  generatedInsights.sort((a, b) => priorityOrder[a.type] - priorityOrder[b.type]);
-  const topInsights = generatedInsights.slice(0, 3);
+  insights.sort((a, b) => priorityOrder[a.type] - priorityOrder[b.type]);
+  const topInsights = insights.slice(0, 4);
 
+  // ==========================================
   // 4. 📦 RETURN FINAL PAYLOAD
+  // ==========================================
   return {
     overview: {
       score: correctCount,
       total: totalQuestions,
+      pointsEarned: totalPointsEarned,
+      maxPoints: maxPossiblePoints,
       accuracyPercentage: Math.round(accuracy * 100) || 0,
       totalTimeSec: totalTimeSpent,
       avgTimePerQuestion: Math.round(avgTimePerQuestion) || 0,
@@ -141,6 +204,7 @@ export function generateExerciseAnalytics(questions) {
     topicBreakdown: topicStats,
     badge: earnedBadge,
     smartInsights: topInsights,
-    rawBehaviors: behaviors 
+    rawBehaviors: behaviors,
+    processedQuestions: processedQuestions // 🚨 This now contains all the deep analysis per question!
   };
 }

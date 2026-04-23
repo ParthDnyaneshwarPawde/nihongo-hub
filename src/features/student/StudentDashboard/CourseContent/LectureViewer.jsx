@@ -10,6 +10,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { processUserActivity } from '@/utils/streakManager'; // Adjust the path if needed
+import { createPortal } from 'react-dom'; // Add this
+import SecureViewer from '@components/shared/SecureViewer'; // Adjust path if needed
+
 
 import { db, auth } from '@services/firebase'; 
 import { collection, getDocs, doc, getDoc, addDoc, serverTimestamp, query, where, onSnapshot, writeBatch, increment } from 'firebase/firestore';
@@ -36,6 +39,7 @@ export default function LectureViewer() {
   const [courseTitle, setCourseTitle] = useState("Loading Course...");
   const [modules, setModules] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
+  const [viewingPdf, setViewingPdf] = useState(null);
   
   const [expandedModules, setExpandedModules] = useState(() => JSON.parse(localStorage.getItem(`expanded_modules_${batchId}`) || '[]'));
   const [expandedChapters, setExpandedChapters] = useState(() => JSON.parse(localStorage.getItem(`expanded_chapters_${batchId}`) || '[]'));
@@ -750,21 +754,61 @@ export default function LectureViewer() {
             {activeTab === 'resources' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-5xl animate-in fade-in slide-in-from-bottom-4">
                 {activeItem.resources && activeItem.resources.length > 0 ? (
-                  activeItem.resources.map(res => (
-                    <div key={res.name} className={`p-5 rounded-[1.5rem] border flex items-center justify-between group cursor-pointer transition-all hover:-translate-y-1 shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800 hover:border-indigo-500/50 hover:shadow-indigo-500/10' : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-indigo-500/5'}`}>
-                      <div className="flex items-center gap-4 overflow-hidden">
-                        <div className={`p-3.5 rounded-2xl shrink-0 transition-colors ${isDarkMode ? 'bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}><FileText size={20} /></div>
-                        <div className="truncate">
-                          <h4 className={`font-bold text-sm truncate transition-colors ${isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-800 group-hover:text-indigo-700'}`}>{res.name}</h4>
-                          <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{res.size || "Resource"}</p>
-                        </div>
-                      </div>
-                      <button className={`p-2.5 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}><Download size={18} /></button>
-                    </div>
-                  ))
-                ) : (
-                  <p className={`col-span-full py-12 font-black uppercase tracking-widest text-xs text-center ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>No resources attached to this lesson.</p>
-                )}
+  activeItem.resources.map((res, idx) => (
+    <div 
+      key={idx} 
+      // 🚨 Clicking the card now triggers the PDF Viewer
+      onClick={() => {
+  if (res.fileUrl.toLowerCase().endsWith('.pdf')) {
+    setViewingPdf(res); // Open secure viewer for PDFs
+  } else {
+    window.open(res.fileUrl, '_blank'); // Just download/open other files in a new tab
+  }
+}}
+      className={`p-5 rounded-[1.5rem] border flex items-center justify-between group cursor-pointer transition-all hover:-translate-y-1 shadow-sm ${
+        isDarkMode 
+          ? 'bg-[#151E2E] border-slate-800 hover:border-indigo-500/50 hover:shadow-indigo-500/10' 
+          : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-indigo-500/5'
+      }`}
+    >
+      <div className="flex items-center gap-4 overflow-hidden">
+        <div className={`p-3.5 rounded-2xl shrink-0 transition-colors ${
+          isDarkMode 
+            ? 'bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white' 
+            : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
+        }`}>
+          <FileText size={20} />
+        </div>
+        <div className="truncate">
+          {/* 🚨 Updated from res.name to res.title */}
+          <h4 className={`font-bold text-sm truncate transition-colors ${
+            isDarkMode ? 'text-slate-200 group-hover:text-white' : 'text-slate-800 group-hover:text-indigo-700'
+          }`}>
+            {res.title}
+          </h4>
+          <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${
+            isDarkMode ? 'text-slate-500' : 'text-slate-400'
+          }`}>
+            {res.size || "Secure PDF"}
+          </p>
+        </div>
+      </div>
+      
+      {/* Changed icon to PlayCircle or Eye to signal "View" instead of "Download" */}
+      <div className={`p-2.5 rounded-xl transition-colors ${
+        isDarkMode ? 'text-slate-500 group-hover:text-indigo-400' : 'text-slate-400 group-hover:text-indigo-600'
+      }`}>
+        <PlayCircle size={18} />
+      </div>
+    </div>
+  ))
+) : (
+  <p className={`col-span-full py-12 font-black uppercase tracking-widest text-xs text-center ${
+    isDarkMode ? 'text-slate-600' : 'text-slate-400'
+  }`}>
+    No resources attached to this lesson.
+  </p>
+)}
               </div>
             )}
           </div>
@@ -778,6 +822,21 @@ export default function LectureViewer() {
       {renderNavigation()}
       {renderMainContent()}
       {renderChat()}
+      {/* 🚨 THE SECURE PDF PORTAL */}
+      {viewingPdf && createPortal(
+        <div style={{ 
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, 
+            zIndex: 2147483647, 
+            backgroundColor: isDarkMode ? '#000000' : 'rgba(0,0,0,0.9)'
+          }} className="animate-in fade-in duration-300 flex flex-col">
+          <SecureViewer 
+            fileUrl={viewingPdf.fileUrl.replace('yourdomain.com', 'darkviolet-gerbil-992793.hostingersite.com')} 
+            userEmail={auth.currentUser?.email || "Protected Student"}
+            onClose={() => setViewingPdf(null)} 
+          />
+        </div>,
+        document.body
+      )}
       <AnimatePresence>
         {showXpDialog && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">

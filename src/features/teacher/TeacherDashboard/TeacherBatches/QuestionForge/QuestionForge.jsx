@@ -11,6 +11,9 @@ import GlobalExamSettings from './components/GlobalExamSettings';
 import QuestionAccordion from './components/QuestionAccordion';
 import ForgeActionButtons from './components/ForgeActionButtons';
 
+// 🚨 Helper to generate truly unique IDs (Prevents the "editing one changes another" bug)
+const generateUniqueId = () => Date.now() + Math.random().toString(36).substr(2, 9);
+
 export default function QuestionForge() {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
@@ -20,7 +23,7 @@ export default function QuestionForge() {
   const [isImporting, setIsImporting] = useState(false); 
   const [importId, setImportId] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
-  const [attemptPoints, setAttemptPoints] = useState(0); // Add this line
+  const [attemptPoints, setAttemptPoints] = useState(0); 
   
   const [quizTitle, setQuizTitle] = useState('');
   const [quizDescription, setQuizDescription] = useState('');
@@ -28,11 +31,15 @@ export default function QuestionForge() {
   const [passPercentage, setPassPercentage] = useState(80); 
   const [isLocked, setIsLocked] = useState(true); 
 
+  // 🚨 PURIFIED INITIAL STATE
   const [questions, setQuestions] = useState([{ 
-    id: Date.now(), customId: '', isExpanded: true, type: 'single_choice',
+    id: generateUniqueId(), customId: '', isExpanded: true, type: 'single_choice',
     subType: 'reading', difficulty: 'mid', topic: '', subTopic: '', allowSecondAttempt: false,
     tags: '', prompt: '', mediaUrl: '', timeLimit: 45, points: 4, negativePoints: 1,
-    options: [{ id: 1, text: '', isCorrect: true, count: 0 }, { id: 2, text: '', isCorrect: false, count: 0 }],
+    options: [
+      { id: 1, uid: generateUniqueId(), text: '', isCorrect: true, count: 0 }, 
+      { id: 2, uid: generateUniqueId(), text: '', isCorrect: false, count: 0 }
+    ],
     hint: '', solutionText: '', solutionVideoUrl: '', isDeleted: false
   }]);
 
@@ -71,10 +78,15 @@ export default function QuestionForge() {
             const loadedQs = questionSnaps.filter(snap => snap.exists()).map(snap => {
               const qData = snap.data();
               let extractedCustomId = typeof qData.id === 'string' && qData.id.startsWith('q_') ? qData.id.replace('q_', '').replace(/^0+/, '') || '0' : ''; 
-              const safeOptions = qData.options && qData.options.length > 0 ? qData.options : [{ id: Date.now(), text: qData.expectedAnswer || '', isCorrect: true, count: 0 }];
+              
+              // 🚨 PURIFY OPTIONS: Ensure every option has a unique UID
+              const safeOptions = qData.options && qData.options.length > 0 
+                ? qData.options.map(o => ({ ...o, uid: o.uid || generateUniqueId() })) 
+                : [{ id: 1, uid: generateUniqueId(), text: qData.expectedAnswer || '', isCorrect: true, count: 0 }];
 
               return {
-                id: qData.id, customId: extractedCustomId, isExpanded: false, 
+                id: generateUniqueId(), // 🚨 PURIFY QUESTION ID: Force new ID to detach from DB collisions
+                customId: extractedCustomId, isExpanded: false, 
                 type: qData.type || 'single_choice', subType: qData.subType || 'reading', difficulty: qData.difficulty || 'mid',
                 topic: qData.topic || '', subTopic: qData.subTopic || '', allowSecondAttempt: qData.secondAttempt || false,
                 tags: qData.tags ? qData.tags.join(', ') : '', prompt: qData.promptText || '', mediaUrl: qData.mediaUrl || '',
@@ -83,7 +95,15 @@ export default function QuestionForge() {
               };
             });
             setQuestions(loadedQs);
-          } else if(data.questions?.length > 0) setQuestions(data.questions); 
+          } else if(data.questions?.length > 0) {
+            // 🚨 PURIFY FALLBACK: If reading directly from exercise document
+            const purifiedQuestions = data.questions.map(q => ({
+              ...q,
+              id: generateUniqueId(),
+              options: q.options?.map(o => ({ ...o, uid: o.uid || generateUniqueId() })) || []
+            }));
+            setQuestions(purifiedQuestions);
+          }
           setAttemptPoints(data.attemptPoints || 0);
         }
       } catch (error) { console.error(error); } finally { setIsLoading(false); }
@@ -100,10 +120,15 @@ export default function QuestionForge() {
       if (qSnap.exists()) {
         const data = qSnap.data();
         let extractedCustomId = typeof data.id === 'string' && data.id.startsWith('q_') ? data.id.replace('q_', '').replace(/^0+/, '') || '0' : ''; 
-        const safeOptions = data.options && data.options.length > 0 ? data.options : [{ id: Date.now(), text: data.expectedAnswer || '', isCorrect: true, count: 0 }];
+        
+        // 🚨 PURIFY OPTIONS ON IMPORT
+        const safeOptions = data.options && data.options.length > 0 
+          ? data.options.map(o => ({ ...o, uid: generateUniqueId() })) 
+          : [{ id: 1, uid: generateUniqueId(), text: data.expectedAnswer || '', isCorrect: true, count: 0 }];
 
         setQuestions([...questions, {
-          id: Date.now(), customId: extractedCustomId, isExpanded: true, 
+          id: generateUniqueId(), // 🚨 PURIFY ID ON IMPORT
+          customId: extractedCustomId, isExpanded: true, 
           type: data.type || 'single_choice', subType: data.subType || 'reading', difficulty: data.difficulty || 'mid',
           topic: data.topic || '', subTopic: data.subTopic || '', allowSecondAttempt: data.secondAttempt || false,
           tags: data.tags ? data.tags.join(', ') : '', prompt: data.promptText || '', mediaUrl: data.mediaUrl || '',
@@ -115,14 +140,78 @@ export default function QuestionForge() {
     } catch (error) { console.error(error); alert("Failed to import question."); } finally { setIsImporting(false); }
   };
 
-  const handleAddQuestion = () => setQuestions([...questions, { id: Date.now(), customId: '', isExpanded: true, type: 'single_choice', subType: 'reading', difficulty: 'mid', topic: '', subTopic: '', allowSecondAttempt: false, tags: '', prompt: '', mediaUrl: '', timeLimit: 45, points: 4, negativePoints: 1, options: [{ id: 1, text: '', isCorrect: true, count: 0 }, { id: 2, text: '', isCorrect: false, count: 0 }], hint: '', solutionText: '', solutionVideoUrl: '', isDeleted: false }]);
+  const handleAddQuestion = () => setQuestions([...questions, { 
+    id: generateUniqueId(), customId: '', isExpanded: true, type: 'single_choice', subType: 'reading', difficulty: 'mid', topic: '', subTopic: '', allowSecondAttempt: false, tags: '', prompt: '', mediaUrl: '', timeLimit: 45, points: 4, negativePoints: 1, 
+    options: [
+      { id: 1, uid: generateUniqueId(), text: '', isCorrect: true, count: 0 }, 
+      { id: 2, uid: generateUniqueId(), text: '', isCorrect: false, count: 0 }
+    ], 
+    hint: '', solutionText: '', solutionVideoUrl: '', isDeleted: false 
+  }]);
+  
   const handleRemoveQuestion = (qId) => setQuestions(questions.map(q => q.id === qId ? { ...q, isDeleted: true, deletedAt: Date.now() } : q));
   const toggleQuestionExpansion = (qId) => setQuestions(questions.map(q => q.id === qId ? { ...q, isExpanded: !q.isExpanded } : q));
-  const updateQuestionField = (qId, field, value) => setQuestions(questions.map(q => { if (q.id === qId) { if (field === 'type' && (value === 'kanji_draw' || value === 'text_input')) return { ...q, [field]: value, options: [{ id: Date.now(), text: q.options[0]?.text || '', isCorrect: true, count: 0 }] }; return { ...q, [field]: value }; } return q; }));
-  const handleAddOption = (qId) => setQuestions(questions.map(q => q.id === qId ? { ...q, options: [...q.options, { id: Date.now(), text: '', isCorrect: false, count: 0 }] } : q));
-  const handleRemoveOption = (qId, optId) => setQuestions(questions.map(q => { if (q.id === qId) { const filteredOptions = q.options.filter(o => o.id !== optId); if (!filteredOptions.some(o => o.isCorrect)) filteredOptions[0].isCorrect = true; return { ...q, options: filteredOptions }; } return q; }));
+  
+  const updateQuestionField = (qId, field, value) => setQuestions(questions.map(q => { 
+    if (q.id === qId) { 
+      if (field === 'type' && (value === 'kanji_draw' || value === 'text_input')) {
+        return { 
+          ...q, 
+          [field]: value, 
+          options: [{ 
+            id: 1, 
+            uid: generateUniqueId(), 
+            text: q.options[0]?.text || '', 
+            isCorrect: true, 
+            count: 0 
+          }] 
+        }; 
+      } 
+      return { ...q, [field]: value }; 
+    } 
+    return q; 
+  }));
+
+  const handleAddOption = (qId) => setQuestions(questions.map(q => {
+    if (q.id === qId) {
+      const nextId = q.options.length > 0 ? Math.max(...q.options.map(o => Number(o.id) || 0)) + 1 : 1;
+      return { 
+        ...q, 
+        options: [...q.options, { 
+          id: nextId, 
+          uid: generateUniqueId(), 
+          text: '', 
+          isCorrect: false, 
+          count: 0 
+        }] 
+      };
+    }
+    return q;
+  }));
+
+  // 🚨 FIXED: Safe state mutation for default correct option when deleting
+  const handleRemoveOption = (qId, optId) => setQuestions(questions.map(q => { 
+    if (q.id === qId) { 
+      const filteredOptions = q.options.filter(o => o.id !== optId); 
+      if (filteredOptions.length > 0 && !filteredOptions.some(o => o.isCorrect)) {
+        filteredOptions[0] = { ...filteredOptions[0], isCorrect: true };
+      }
+      return { ...q, options: filteredOptions }; 
+    } 
+    return q; 
+  }));
+
   const updateOptionText = (qId, optId, newText) => setQuestions(questions.map(q => q.id === qId ? { ...q, options: q.options.map(o => o.id === optId ? { ...o, text: newText } : o) } : q));
-  const setCorrectOption = (qId, correctOptId) => setQuestions(questions.map(q => { if (q.id === qId) { if (q.type === 'single_choice') return { ...q, options: q.options.map(o => ({ ...o, isCorrect: o.id === correctOptId })) }; return { ...q, options: q.options.map(o => o.id === correctOptId ? { ...o, isCorrect: !o.isCorrect } : o) }; } return q; }));
+  
+  const setCorrectOption = (qId, correctOptId) => setQuestions(questions.map(q => { 
+    if (q.id === qId) { 
+      if (q.type === 'single_choice') {
+        return { ...q, options: q.options.map(o => ({ ...o, isCorrect: o.id === correctOptId })) }; 
+      }
+      return { ...q, options: q.options.map(o => o.id === correctOptId ? { ...o, isCorrect: !o.isCorrect } : o) }; 
+    } 
+    return q; 
+  }));
 
   const handleSaveQuiz = async () => {
     if (!quizTitle.trim()) return alert("Please provide a title.");
@@ -140,7 +229,7 @@ export default function QuestionForge() {
 
       activeQs.forEach((q) => {
         let finalQId = q.customId?.toString().trim() !== '' ? `q_${String(q.customId).padStart(4, '0')}` : `q_auto_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-        let cleanOptions = (q.type === 'text_input' || q.type === 'kanji_draw') ? [{ id: q.options[0]?.id || Date.now(), text: q.options[0]?.text || '', isCorrect: true, count: q.options[0]?.count || 0 }] : q.options;
+        let cleanOptions = (q.type === 'text_input' || q.type === 'kanji_draw') ? [{ id: q.options[0]?.id || Date.now(), uid: q.options[0]?.uid || generateUniqueId(), text: q.options[0]?.text || '', isCorrect: true, count: q.options[0]?.count || 0 }] : q.options;
 
         batch.set(doc(db, `question_bank/${batchId}/questions`, finalQId), {
           id: finalQId, authorId: actualTeacherId, type: q.type, subType: q.subType,
