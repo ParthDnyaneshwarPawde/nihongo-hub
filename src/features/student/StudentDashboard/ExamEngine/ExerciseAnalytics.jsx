@@ -250,7 +250,7 @@ export default function ExerciseAnalytics() {
         <AlertTriangle size={48} className="text-amber-500 mb-4" />
         <h2 className="text-2xl font-black mb-2">No Active Data</h2>
         <p className="text-slate-400 mb-6 text-center max-w-xs">Return to the dashboard and complete an exercise to see this dashboard.</p>
-        <button onClick={() => navigate(-1)} className="px-6 py-3 bg-indigo-600 rounded-xl font-bold active:scale-95 transition-all">
+        <button onClick={() => navigate(-2)} className="px-6 py-3 bg-indigo-600 rounded-xl font-bold active:scale-95 transition-all">
           Back to Dojo
         </button>
       </div>
@@ -272,7 +272,7 @@ export default function ExerciseAnalytics() {
       <div className="sticky top-0 z-50 bg-[#0B1121]/80 backdrop-blur-xl border-b border-slate-800/60 pt-6 pb-4 px-4 md:px-8 shadow-2xl">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate(-1)} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl transition-all hover:-translate-x-1">
+            <button onClick={() => navigate(-2)} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl transition-all hover:-translate-x-1">
               <ArrowLeft size={20} className="text-white" />
             </button>
             <div>

@@ -11,7 +11,7 @@ export default function ForgeActionButtons({ handleAddQuestion, importId, setImp
       <div className={`flex-1 p-6 rounded-[32px] border flex flex-col justify-center gap-4 ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div>
           <h3 className={`font-black flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}><Download size={18} className="text-indigo-500"/> Import from Bank</h3>
-          <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Paste an ID (e.g., q_0001) from your question bank.</p>
+          <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Paste an ID (e.g., q_001234) from your question bank.</p>
         </div>
         <div className={`flex items-center gap-2 p-2 rounded-2xl border focus-within:border-indigo-500 transition-colors ${isDarkMode ? 'bg-[#0B1121] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <input type="text" value={importId} onChange={(e) => setImportId(e.target.value)} placeholder="Paste Question ID..." className={`flex-1 bg-transparent px-3 outline-none text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`} />
