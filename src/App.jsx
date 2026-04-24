@@ -24,6 +24,9 @@ import LectureViewer from '@features/student/StudentDashboard/CourseContent/Lect
 // 🚨 IMPORT THE NEW ANALYTICS DASHBOARD
 import ExerciseAnalytics from '@features/student/StudentDashboard/ExamEngine/ExerciseAnalytics'; 
 
+// 🚨 IMPORT THE NEW PRACTICE MAP EDITOR
+import PracticeMapEditor from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/PracticeMapEditor';
+
 // 🚨 IMPORT THE NETWORK SHIELD
 import NetworkShield from '@/components/NetworkShield';
 
@@ -129,6 +132,13 @@ function App() {
               <QuestionForge />
             </ProtectedRoute>
           } /> 
+
+          {/* 🚨 THE NEW PRACTICE MAP EDITOR ROUTE */}
+          <Route path="/batch/:batchId/dojo/:categoryId/map" element={
+            <ProtectedRoute requiredRole="teacher">
+              <PracticeMapEditor />
+            </ProtectedRoute>
+          } />
 
           <Route path="/profile-settings" element={
             <ProtectedRoute requiredRole="student">

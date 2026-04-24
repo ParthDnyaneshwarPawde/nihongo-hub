@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
-import { useParams } from 'react-dom'; // Note: Usually 'react-router-dom'
+import { useParams } from 'react-router-dom'; // Fixed this import
 import { useStickyState } from '@/hooks/useStickyState';
 
 // 🚨 IMPORT FIREBASE DB (Required for your user profile fetch)
@@ -14,11 +14,11 @@ import { db } from '@services/firebase';
 // 🚨 IMPORT YOUR FUNCTIONAL COMPONENTS HERE:
 import BatchVaultEditor from '@features/teacher/TeacherDashboard/TeacherBatches/BatchVaultEditor'; 
 import BatchRoster from '@features/teacher/TeacherDashboard/TeacherBatches/BatchRoster';    
-import BatchSettings from '@features/teacher/TeacherDashboard/TeacherBatches/BatchSettings';           
+import BatchSettings from '@features/teacher/TeacherDashboard/TeacherBatches/BatchSettings';          
 import PathBuilderEngine from '@features/teacher/TeacherDashboard/TeacherBatches/PathBuilderEngine';
 
-// Placeholder for your Dojo component
-// import PracticeDojoManager from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojoManager';
+// 🚨 IMPORT THE NEW PRACTICE DOJO HUB
+import PracticeDojo from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/PracticeDojo';
 
 export default function BatchCommandCenter({ batch, onClose }) {
   const { isDarkMode } = useTheme();
@@ -114,17 +114,10 @@ export default function BatchCommandCenter({ batch, onClose }) {
             </div>
           )}
 
-          {/* 🚨 NEW VIEW: PRACTICE DOJO */}
+          {/* 🚨 RENDER PRACTICE DOJO */}
           {activeView === 'DOJO' && (
-            <div className="animate-in fade-in duration-300 flex flex-col items-center justify-center h-full text-center">
-               <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-[2rem] flex items-center justify-center rotate-3 mb-6">
-                 <Target size={40} className="-rotate-3" />
-               </div>
-               <h2 className={`text-3xl font-black mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>The Practice Dojo</h2>
-               <p className={`text-slate-500 font-medium max-w-md ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                 Manage standalone mock tests, spaced-repetition flashcards, and endless grammar drills for your students here.
-               </p>
-               {/* <PracticeDojoManager batchId={batch.id} isDarkMode={isDarkMode} /> */}
+            <div className="animate-in fade-in duration-300 h-full">
+               <PracticeDojo batchId={batch.id} />
             </div>
           )}
 
