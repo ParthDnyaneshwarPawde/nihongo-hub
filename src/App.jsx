@@ -27,8 +27,12 @@ import ExerciseAnalytics from '@features/student/StudentDashboard/ExamEngine/Exe
 // 🚨 IMPORT THE NEW PRACTICE MAP EDITOR
 import PracticeMapEditor from '@features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/PracticeMapEditor';
 
+import LevelForge from '@/features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/LevelForge/LevelForge';
+
+
 // 🚨 IMPORT THE NETWORK SHIELD
 import NetworkShield from '@/components/NetworkShield';
+import DeckArsenal from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/DeckArsenal/DeckArsenal';
 
 function App() {
   const navigate = useNavigate();
@@ -137,6 +141,18 @@ function App() {
           <Route path="/batch/:batchId/dojo/:categoryId/map" element={
             <ProtectedRoute requiredRole="teacher">
               <PracticeMapEditor />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/dojo/:categoryId/unit/:unitId/chapter/:chapterId/node/:nodeId/forge" element={
+            <ProtectedRoute requiredRole="teacher">
+              <LevelForge />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/arsenal" element={
+            <ProtectedRoute requiredRole="teacher">
+              <DeckArsenal />
             </ProtectedRoute>
           } />
 

@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BookOpen, Zap, FileText, Headphones, Map, 
-  Database, Lock, Unlock, PlusCircle, ArrowRight,
-  Sparkles, Layers
+  Database, Lock, Unlock, ArrowRight, Sparkles, Layers
 } from 'lucide-react';
+import { db } from '@services/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function PracticeDojo({ batchId }) {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
 
   const [activeCategory, setActiveCategory] = useState(null);
-  const [qbLocks, setQbLocks] = useState({ vocab: true, grammar: true, reading: true, listening: true });
+  
+  // 🚨 NEW UNIFIED STATE FOR FIRESTORE LOCKS
+  const [categoryLocks, setCategoryLocks] = useState({});
 
   const categories = [
     { 
@@ -38,9 +41,67 @@ export default function PracticeDojo({ batchId }) {
     },
   ];
 
-  const toggleQuestionBank = (catId, e) => {
-    e.stopPropagation(); // Prevents the card from closing
-    setQbLocks(prev => ({ ...prev, [catId]: !prev[catId] }));
+  // 🚨 FETCH LOCK STATUS ON LOAD
+  useEffect(() => {
+    const fetchLocks = async () => {
+      if (!batchId) return;
+      const locks = {};
+      
+      await Promise.all(categories.map(async (cat) => {
+        const catRef = doc(db, `batches/${batchId}/self_practice/${cat.id}`);
+        const snap = await getDoc(catRef);
+        
+        if (snap.exists()) {
+          const data = snap.data();
+          locks[cat.id] = {
+            isLocked: data.isLocked || false,
+            isQuestionBankLocked: data.isQuestionBankLocked !== false // Default to true if undefined
+          };
+        } else {
+          locks[cat.id] = { isLocked: false, isQuestionBankLocked: true };
+        }
+      }));
+      
+      setCategoryLocks(locks);
+    };
+    
+    fetchLocks();
+  }, [batchId]);
+
+  // 🚨 TOGGLE QUESTION BANK LOCK (Updates DB + UI)
+  const toggleQuestionBank = async (catId, e) => {
+    e.stopPropagation();
+    const currentState = categoryLocks[catId]?.isQuestionBankLocked ?? true;
+    const newState = !currentState;
+
+    // Optimistic UI Update
+    setCategoryLocks(prev => ({ ...prev, [catId]: { ...prev[catId], isQuestionBankLocked: newState } }));
+
+    // Firebase Update
+    try {
+      const catRef = doc(db, `batches/${batchId}/self_practice/${catId}`);
+      await setDoc(catRef, { isQuestionBankLocked: newState }, { merge: true });
+    } catch (error) {
+      console.error("Failed to update Question Bank Lock:", error);
+    }
+  };
+
+  // 🚨 TOGGLE SECTION LOCK (Updates DB + UI)
+  const toggleSectionLock = async (catId, e) => {
+    e.stopPropagation();
+    const currentState = categoryLocks[catId]?.isLocked ?? false;
+    const newState = !currentState;
+
+    // Optimistic UI Update
+    setCategoryLocks(prev => ({ ...prev, [catId]: { ...prev[catId], isLocked: newState } }));
+
+    // Firebase Update
+    try {
+      const catRef = doc(db, `batches/${batchId}/self_practice/${catId}`);
+      await setDoc(catRef, { isLocked: newState }, { merge: true });
+    } catch (error) {
+      console.error("Failed to update Section Lock:", error);
+    }
   };
 
   return (
@@ -74,6 +135,8 @@ export default function PracticeDojo({ batchId }) {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {categories.map((cat) => {
             const isActive = activeCategory === cat.id;
+            const isSectionLocked = categoryLocks[cat.id]?.isLocked ?? false;
+            const isQBLocked = categoryLocks[cat.id]?.isQuestionBankLocked ?? true;
 
             return (
               <motion.div 
@@ -104,21 +167,40 @@ export default function PracticeDojo({ batchId }) {
                       {cat.icon}
                     </div>
                     
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className={`text-2xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{cat.title}</h3>
-                        {!isActive && (
-                           <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.2em] border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-slate-200/50 border-slate-300 text-slate-500'}`}>
-                             {cat.tag}
-                           </div>
-                        )}
+                    <div className="flex-1 w-full">
+                      {/* 🚨 THE NEW STATUS PILL HEADER */}
+                      <div className="flex flex-wrap items-center justify-between gap-4 mb-1">
+                        
+                        <h3 className={`text-2xl font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                          {cat.title}
+                        </h3>
+                        
+                        <div className="flex items-center gap-2">
+                          {!isActive && (
+                             <div className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] border ${isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-slate-200/50 border-slate-300 text-slate-500'}`}>
+                               {cat.tag}
+                             </div>
+                          )}
+
+                          <button 
+                            onClick={(e) => toggleSectionLock(cat.id, e)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border backdrop-blur-sm shadow-sm hover:scale-105 active:scale-95 ${
+                              isSectionLocked 
+                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-500 hover:bg-rose-500/20' 
+                                : (isDarkMode ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20' : 'bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100')
+                            }`}
+                          >
+                            {isSectionLocked ? <><Lock size={12} /> Hidden</> : <><Unlock size={12} /> Live</>}
+                          </button>
+                        </div>
+
                       </div>
                       <p className={`text-sm font-bold tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{cat.subtitle}</p>
                     </div>
 
                     {/* Expand Indicator */}
                     {!isActive && (
-                      <div className={`hidden lg:flex w-10 h-10 rounded-full items-center justify-center border transition-all group-hover:bg-indigo-500 group-hover:border-indigo-500 group-hover:text-white ${isDarkMode ? 'border-slate-700 text-slate-600' : 'border-slate-300 text-slate-400'}`}>
+                      <div className={`hidden lg:flex shrink-0 w-10 h-10 rounded-full items-center justify-center border transition-all group-hover:bg-indigo-500 group-hover:border-indigo-500 group-hover:text-white ${isDarkMode ? 'border-slate-700 text-slate-600' : 'border-slate-300 text-slate-400'}`}>
                         <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
                       </div>
                     )}
@@ -151,7 +233,10 @@ export default function PracticeDojo({ batchId }) {
 
                           {/* Console Button 2: Official Material */}
                           <button 
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              navigate(`/batch/${batchId}/arsenal`); 
+                            }}
                             className={`flex flex-col items-start p-6 rounded-3xl border border-dashed transition-all group ${
                               isDarkMode ? 'bg-[#0B1121]/50 border-slate-700 hover:border-slate-500 hover:bg-slate-800' : 'bg-white border-slate-300 hover:border-slate-400 hover:bg-slate-100'
                             }`}
@@ -160,7 +245,7 @@ export default function PracticeDojo({ batchId }) {
                               <Layers size={24} />
                             </div>
                             <h4 className={`text-lg font-black mb-1 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Add Resources</h4>
-                            <p className={`text-xs font-bold text-left ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Attach PDFs and study guides.</p>
+                            <p className={`text-xs font-bold text-left ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Build Flashcards and drill decks.</p>
                           </button>
 
                           {/* Console Button 3: Question Bank Toggle */}
@@ -178,15 +263,16 @@ export default function PracticeDojo({ batchId }) {
                               <p className={`text-xs font-bold text-left mb-6 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Manage the master repository.</p>
                             </div>
 
+                            {/* 🚨 THE QUESTION BANK LOCK BUTTON */}
                             <button 
                               onClick={(e) => toggleQuestionBank(cat.id, e)}
                               className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest transition-all border ${
-                                qbLocks[cat.id] 
+                                isQBLocked 
                                   ? 'bg-rose-500/10 text-rose-500 border-rose-500/20 hover:bg-rose-500/20' 
                                   : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20'
                               }`}
                             >
-                              {qbLocks[cat.id] ? <><Lock size={16} /> Locked</> : <><Unlock size={16} /> Unlocked</>}
+                              {isQBLocked ? <><Lock size={16} /> Locked</> : <><Unlock size={16} /> Unlocked</>}
                             </button>
                           </div>
 
