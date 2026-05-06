@@ -427,8 +427,8 @@ export default function QuestionForge() {
 
       activeQs.forEach((q) => {
         let finalQId = q.customId?.toString().trim() !== '' 
-          ? `q_${String(q.customId).padStart(5, '0')}` 
-          : `q_${Math.floor(10000 + Math.random() * 90000)}`;
+          ? `q_${String(q.customId).padStart(6, '0')}` 
+          : `q_${Math.floor(100000 + Math.random() * 900000)}`;
 
         let cleanOptions = (q.type === 'text_input' || q.type === 'kanji_draw') ? [{ id: q.options[0]?.id || Date.now(), uid: q.options[0]?.uid || generateUniqueId(), text: q.options[0]?.text || '', isCorrect: true, count: q.options[0]?.count || 0 }] : q.options;
 

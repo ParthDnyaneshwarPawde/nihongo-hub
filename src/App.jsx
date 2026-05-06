@@ -33,6 +33,9 @@ import LevelForge from '@/features/teacher/TeacherDashboard/TeacherBatches/Pract
 // 🚨 IMPORT THE NETWORK SHIELD
 import NetworkShield from '@/components/NetworkShield';
 import DeckArsenal from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/DeckArsenal/DeckArsenal';
+import DeckForge from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/DeckArsenal/DeckForge/DeckForge';
+import VocabLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexicon';
+import VocabLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexiconEditor';
 
 function App() {
   const navigate = useNavigate();
@@ -150,9 +153,27 @@ function App() {
             </ProtectedRoute>
           } />
 
-          <Route path="/batch/:batchId/arsenal" element={
+          <Route path="/batch/:batchId/arsenal/:categoryId" element={
             <ProtectedRoute requiredRole="teacher">
               <DeckArsenal />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/arsenal/:categoryId/deck/:deckId/forge" element={
+            <ProtectedRoute requiredRole="teacher">
+              <DeckForge />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/lexicon/:categoryId" element={
+            <ProtectedRoute requiredRole="teacher">
+              <VocabLexicon />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/lexicon/:categoryId/edit" element={
+            <ProtectedRoute requiredRole="teacher">
+              <VocabLexiconEditor />
             </ProtectedRoute>
           } />
 

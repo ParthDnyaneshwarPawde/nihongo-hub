@@ -21,20 +21,31 @@
 
 /* 🌑 NEUTRAL ADAPTIVE SCROLLBAR */
 /* Neutral adaptive scrollbar */
+/* 🌑 NEUTRAL ADAPTIVE SCROLLBAR */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent; 
+}
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
-}
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b; /* slate-800 matches black/dark bg */
-  border-radius: 20px;
+  margin-block: 24px; /* Keeps scrollbar away from rounded edges */
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1; /* slate-300 for light mode */
+  background: #cbd5e1; /* slate-300 */
   border-radius: 20px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155; /* slate-700 matches dark bg beautifully */
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; 
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 img {
   pointer-events: none;
