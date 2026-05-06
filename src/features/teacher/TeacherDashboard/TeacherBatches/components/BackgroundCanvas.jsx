@@ -6,7 +6,8 @@ import { EffectComposer, DepthOfField, Bloom, Noise } from '@react-three/postpro
 import * as THREE from 'three';
 
 // Highly reliable Google Font raw OTF (Works flawlessly with troika SDF text!)
-const KANJI_FONT_URL = 'https://fonts.gstatic.com/ea/notosansjapanese/v6/NotoSansJP-Bold.otf';
+// Highly reliable Google Font raw OTF (Works flawlessly with troika SDF text!)
+const KANJI_FONT_URL = '/fonts/NotoSansJP-Bold.otf';
 
 function LightningKanji({ text, position, rotation, delay, scale = 1, zOffset = 0 }) {
   const groupRef = useRef();

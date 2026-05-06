@@ -36,6 +36,7 @@ import DeckArsenal from './features/teacher/TeacherDashboard/TeacherBatches/Prac
 import DeckForge from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/DeckArsenal/DeckForge/DeckForge';
 import VocabLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexicon';
 import VocabLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexiconEditor';
+import GrammarLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/GrammarLexicon';
 
 function App() {
   const navigate = useNavigate();
@@ -165,15 +166,21 @@ function App() {
             </ProtectedRoute>
           } />
 
-          <Route path="/batch/:batchId/lexicon/:categoryId" element={
+          <Route path="/batch/:batchId/lexicon/vocab" element={
             <ProtectedRoute requiredRole="teacher">
               <VocabLexicon />
             </ProtectedRoute>
           } />
 
-          <Route path="/lexicon/:categoryId/edit" element={
+          <Route path="/lexicon/vocab/edit" element={
             <ProtectedRoute requiredRole="teacher">
               <VocabLexiconEditor />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/lexicon/grammar" element={
+            <ProtectedRoute requiredRole="teacher">
+              <GrammarLexicon />
             </ProtectedRoute>
           } />
 

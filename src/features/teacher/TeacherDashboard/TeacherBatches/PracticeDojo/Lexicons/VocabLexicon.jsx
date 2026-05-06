@@ -6,10 +6,51 @@ import {
   BookOpen, Search, Plus, Archive, Activity, Sparkles, 
   Wind, Link2, Hash, MessageCircle, Edit3, Trash2, 
   Volume2, Globe, Eye, EyeOff, Lock, Unlock,
-  Languages, Type, Edit, X, Info, Quote, GraduationCap
+  Languages, Type, Edit, X, Info, Quote, GraduationCap, Loader2
 } from 'lucide-react';
 import { db, auth } from '@services/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'; 
+
+// 🚨 THE STRICT GOJŪON MATRICES
+const hiraganaChart = [
+  ['あ', 'い', 'う', 'え', 'お'],
+  ['か', 'き', 'く', 'け', 'こ'],
+  ['さ', 'し', 'す', 'せ', 'そ'],
+  ['た', 'ち', 'つ', 'て', 'と'],
+  ['な', 'に', 'ぬ', 'ね', 'の'],
+  ['は', 'ひ', 'ふ', 'へ', 'ほ'],
+  ['ま', 'み', 'む', 'め', 'も'],
+  ['や', null, 'ゆ', null, 'よ'],
+  ['ら', 'り', 'る', 'れ', 'ろ'],
+  ['わ', null, null, null, 'を'],
+  ['ん', null, null, null, null],
+  // Dakuten & Handakuten
+  ['が', 'ぎ', 'ぐ', 'げ', 'ご'],
+  ['ざ', 'じ', 'ず', 'ぜ', 'ぞ'],
+  ['だ', 'ぢ', 'づ', 'で', 'ど'],
+  ['ば', 'び', 'ぶ', 'べ', 'ぼ'],
+  ['ぱ', 'ぴ', 'ぷ', 'ぺ', 'ぽ']
+];
+
+const katakanaChart = [
+  ['ア', 'イ', 'ウ', 'エ', 'オ'],
+  ['カ', 'キ', 'ク', 'ケ', 'コ'],
+  ['サ', 'シ', 'ス', 'セ', 'ソ'],
+  ['タ', 'チ', 'ツ', 'テ', 'ト'],
+  ['ナ', 'ニ', 'ヌ', 'ネ', 'ノ'],
+  ['ハ', 'ヒ', 'フ', 'ヘ', 'ホ'],
+  ['マ', 'ミ', 'ム', 'メ', 'モ'],
+  ['ヤ', null, 'ユ', null, 'ヨ'],
+  ['ラ', 'リ', 'ル', 'レ', 'ロ'],
+  ['ワ', null, null, null, 'ヲ'],
+  ['ン', null, null, null, null],
+  // Dakuten & Handakuten
+  ['ガ', 'ギ', 'グ', 'ゲ', 'ゴ'],
+  ['ザ', 'ジ', 'ズ', 'ゼ', 'ゾ'],
+  ['ダ', 'ヂ', 'ヅ', 'デ', 'ド'],
+  ['バ', 'ビ', 'ブ', 'ベ', 'ボ'],
+  ['パ', 'ピ', 'プ', 'ペ', 'ポ']
+];
 
 export default function VocabLexicon() {
   const { isDarkMode } = useTheme();
@@ -24,6 +65,10 @@ export default function VocabLexicon() {
   const [canEditGlobal, setCanEditGlobal] = useState(false);
   const [hiddenCategories, setHiddenCategories] = useState([]);
   const [hiddenWords, setHiddenWords] = useState([]);
+
+  // DATABASE STATE
+  const [entries, setEntries] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const vocabCategories = [
     { id: 'all', label: 'All Vocabulary', jp: '全語彙', icon: Globe },
@@ -42,25 +87,13 @@ export default function VocabLexicon() {
     { id: 'kanji', label: 'Kanji', jp: '漢字', icon: Edit }, 
   ];
 
-  const [vocabBank] = useState([
-    { id: 'v_1', type: 'vocab', kanji: '食べる', kana: 'たべる', romaji: 'taberu', english: 'to eat', pos: 'verb', subType: 'Ichidan (Ru)', jlpt: 'N5', notes: 'Conjugates by dropping the "ru".', sentences: [{ jp: '私は毎日りんごを食べる。', en: 'I eat an apple every day.' }] },
-    { id: 'v_2', type: 'vocab', kanji: '猫', kana: 'ねこ', romaji: 'neko', english: 'cat', pos: 'noun', subType: 'Standard', jlpt: 'N5', notes: 'Often written in Hiragana.', sentences: [{ jp: 'あそこに可愛い猫がいます。', en: 'There is a cute cat over there.' }] },
-    { id: 'v_3', type: 'vocab', kanji: '高い', kana: 'たかい', romaji: 'takai', english: 'tall, expensive', pos: 'adjective', subType: 'I-Adj', jlpt: 'N5', notes: 'Meaning depends on context (height vs price).', sentences: [{ jp: 'この本はとても高いです。', en: 'This book is very expensive.' }, { jp: 'あのビルは高い。', en: 'That building is tall.' }] },
-  ]);
-
-  const [charBank] = useState([
-    { id: 'c_1', type: 'hiragana', symbol: 'あ', romaji: 'a' },
-    { id: 'c_2', type: 'hiragana', symbol: 'い', romaji: 'i' },
-    { id: 'c_3', type: 'katakana', symbol: 'ア', romaji: 'a' },
-    { id: 'k_1', type: 'kanji', symbol: '水', meaning: 'Water', onyomi: 'スイ (sui)', kunyomi: 'みず (mizu)', jlpt: 'N5', strokes: 4, examples: ['水 (みず) - Water', '水曜日 (すいようび) - Wednesday'] },
-    { id: 'k_2', type: 'kanji', symbol: '火', meaning: 'Fire', onyomi: 'カ (ka)', kunyomi: 'ひ (hi)', jlpt: 'N5', strokes: 4, examples: ['火 (ひ) - Fire', '火曜日 (かようび) - Tuesday'] },
-  ]);
-
   useEffect(() => {
     const fetchData = async () => {
       const userUid = auth.currentUser?.uid;
       if (!userUid || !batchId || !categoryId) return;
+      
       try {
+        setIsLoading(true);
         const lexiconRef = doc(db, 'lexicons', categoryId);
         const lexiconSnap = await getDoc(lexiconRef);
         if (lexiconSnap.exists()) setCanEditGlobal((lexiconSnap.data().accessIds || []).includes(userUid));
@@ -71,7 +104,16 @@ export default function VocabLexicon() {
           setHiddenCategories(overridesSnap.data().hiddenCategories || []);
           setHiddenWords(overridesSnap.data().hiddenWords || []);
         }
-      } catch (error) { console.error(error); }
+
+        const entriesRef = collection(db, `lexicons/${categoryId}/entries`);
+        const entriesSnap = await getDocs(entriesRef);
+        setEntries(entriesSnap.docs.map(doc => doc.data()));
+
+      } catch (error) { 
+        console.error("Failed to fetch database:", error); 
+      } finally {
+        setIsLoading(false);
+      }
     };
     fetchData();
   }, [batchId, categoryId]);
@@ -90,11 +132,70 @@ export default function VocabLexicon() {
     try { await setDoc(doc(db, `batches/${batchId}/lexicon_overrides`, categoryId), { hiddenWords: newHidden }, { merge: true }); } catch (error) { console.error(error); }
   };
 
+  const playAudio = (e, urlField, defaultText) => {
+    e.stopPropagation(); 
+    const isUrl = (str) => {
+      if (!str) return false;
+      const cleanStr = str.toLowerCase();
+      return cleanStr.includes('http') || cleanStr.includes('www.') || cleanStr.includes('.com') || cleanStr.includes('.mp3') || cleanStr.includes('.wav');
+    };
+
+    const speakNative = (text) => {
+      if (!text || isUrl(text)) return; 
+      if (!window.speechSynthesis) return alert("Your browser does not support text-to-speech.");
+      window.speechSynthesis.cancel(); 
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ja-JP'; 
+      utterance.rate = 0.85; 
+      window.speechSynthesis.speak(utterance);
+    };
+
+    let url = urlField ? urlField.trim().replace(/^["']|["']$/g, '') : '';
+
+    if (isUrl(url)) {
+      if (!url.startsWith('http')) url = `https://${url}`;
+      const audio = new Audio(url);
+      audio.play().catch(err => {
+        console.warn("Audio link blocked. Falling back to native voice.");
+        speakNative(defaultText); 
+      });
+    } else if (url !== '') {
+      speakNative(url);
+    } else {
+      speakNative(defaultText);
+    }
+  };
+
   const isCharView = ['hiragana', 'katakana', 'kanji'].includes(activeCategory);
   
-  const displayData = isCharView 
-    ? charBank.filter(c => c.type === activeCategory && (c.symbol.includes(searchQuery) || c.romaji?.includes(searchQuery) || c.meaning?.toLowerCase().includes(searchQuery.toLowerCase())))
-    : vocabBank.filter(word => (activeCategory === 'all' || word.pos === activeCategory) && (word.english.toLowerCase().includes(searchQuery.toLowerCase()) || word.kanji.includes(searchQuery) || word.kana.includes(searchQuery)));
+  const displayData = entries.filter(entry => {
+    let matchesCategory = false;
+    if (isCharView) {
+      matchesCategory = entry.type === activeCategory;
+    } else {
+      if (activeCategory === 'all') matchesCategory = entry.type === 'vocab';
+      else matchesCategory = entry.type === 'vocab' && entry.pos === activeCategory;
+    }
+
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = 
+      (entry.english?.toLowerCase().includes(q)) || 
+      (entry.meaning?.toLowerCase().includes(q)) || 
+      (entry.kanji?.includes(q)) || 
+      (entry.symbol?.includes(q)) || 
+      (entry.kana?.includes(q)) ||
+      (entry.romaji?.toLowerCase().includes(q));
+
+    return matchesCategory && matchesSearch;
+  }).sort((a, b) => {
+    // Only Kanji needs manual sorting now, Kana is handled by the Matrix structure!
+    if (activeCategory === 'kanji') {
+       const meaningA = a.english || a.meaning || '';
+       const meaningB = b.english || b.meaning || '';
+       return meaningA.localeCompare(meaningB); 
+    }
+    return 0; 
+  });
 
   const getJlptColor = (level) => {
     switch(level) {
@@ -105,6 +206,8 @@ export default function VocabLexicon() {
     }
   };
 
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 size={40} className="animate-spin text-indigo-500" /></div>;
+
   return (
     <div className={`min-h-screen flex flex-col md:flex-row font-sans ${isDarkMode ? 'bg-[#0B1120] text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
       <div className={`fixed inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none z-0 ${isDarkMode ? 'opacity-20' : 'opacity-10'}`}></div>
@@ -112,19 +215,16 @@ export default function VocabLexicon() {
       <aside className={`w-full md:w-72 shrink-0 border-r md:min-h-screen md:sticky top-0 z-10 flex flex-col overflow-y-auto ${isDarkMode ? 'bg-[#0F1523]/80 border-slate-800 backdrop-blur-2xl' : 'bg-white/80 border-slate-200 backdrop-blur-2xl'}`}>
         <div className="p-6 md:p-8 flex-1">
           
-          {/* 🚨 THE SECRET BACKDOOR HEADER */}
           <div className="flex items-center gap-3 mb-10 group">
             <div className={`p-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/20`}>
               <BookOpen size={20} />
             </div>
             <div className="flex flex-col items-start">
               <h2 className="text-xl font-black tracking-tight leading-none">Vocab Lexicon</h2>
-              
               {canEditGlobal ? (
                 <button 
                   onClick={() => navigate(`/lexicon/${categoryId}/edit`)}
                   className={`text-[9px] font-black uppercase tracking-widest mt-1 flex items-center gap-1 transition-all outline-none ${isDarkMode ? 'text-indigo-400/70 hover:text-indigo-400' : 'text-indigo-600/70 hover:text-indigo-600'}`}
-                  title="Secret Teacher Editor Access"
                 >
                   Master Database <Edit3 size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
@@ -133,7 +233,6 @@ export default function VocabLexicon() {
                   Master Database
                 </span>
               )}
-
             </div>
           </div>
 
@@ -203,19 +302,17 @@ export default function VocabLexicon() {
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-            <div className={`flex items-center gap-2 p-2.5 rounded-2xl border w-full sm:w-64 shadow-sm transition-all ${isDarkMode ? 'bg-[#151E2E] border-slate-800 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20' : 'bg-white border-slate-200 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
+            <div className={`flex items-center gap-2 p-2.5 rounded-2xl border w-full sm:w-64 shadow-sm transition-all ${isDarkMode ? 'bg-[#151E2E] border-slate-800 focus-within:border-indigo-500' : 'bg-white border-slate-200 focus-within:border-indigo-400'}`}>
               <Search size={16} className="text-slate-400 ml-1" />
               <input type="text" placeholder="Search entries..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className={`bg-transparent border-none outline-none text-xs font-bold w-full ${isDarkMode ? 'text-white placeholder:text-slate-600' : 'text-slate-900 placeholder:text-slate-400'}`} />
             </div>
-            
-            {/* The Big Blue Edit Button is gone from here! Only the secret backdoor remains. */}
           </div>
         </header>
 
         {!isCharView ? (
           /* TABLE VIEW FOR VOCABULARY */
-          <div className={`overflow-x-auto rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
-            <table className="w-full text-left border-collapse whitespace-nowrap">
+          <div className={`overflow-x-auto rounded-[2rem] border shadow-sm custom-scrollbar ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`}>
+            <table className="w-full text-left border-collapse whitespace-nowrap min-w-[600px]">
               <thead>
                 <tr className={`text-[10px] font-black uppercase tracking-widest border-b ${isDarkMode ? 'bg-[#0F1523] border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
                   <th className="p-5 font-bold w-12 text-center">Batch</th>
@@ -242,9 +339,14 @@ export default function VocabLexicon() {
                         </td>
                         <td className="p-5">
                           <div className="flex items-center gap-4">
-                            <button onClick={(e) => e.stopPropagation()} className={`p-2 rounded-full transition-colors opacity-0 group-hover:opacity-100 hidden sm:block ${isDarkMode ? 'bg-slate-800 text-indigo-400 hover:bg-indigo-500 hover:text-white' : 'bg-slate-100 text-indigo-600 hover:bg-indigo-100'}`}><Volume2 size={14} /></button>
+                            <button 
+                              onClick={(e) => playAudio(e, word.audioUrl, word.kanji || word.symbol)} 
+                              className={`p-2 rounded-full transition-colors hidden sm:block opacity-0 group-hover:opacity-100 ${isDarkMode ? 'bg-slate-800 text-indigo-400 hover:bg-indigo-500 hover:text-white' : 'bg-slate-100 text-indigo-600 hover:bg-indigo-100'}`}
+                            >
+                              <Volume2 size={14} />
+                            </button>
                             <div>
-                              <span className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{word.kanji}</span>
+                              <span className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{word.kanji || word.symbol}</span>
                               <div className="flex flex-col mt-0.5">
                                 <span className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{word.kana}</span>
                                 <span className={`text-[10px] font-medium text-slate-500`}>{word.romaji}</span>
@@ -252,13 +354,13 @@ export default function VocabLexicon() {
                             </div>
                           </div>
                         </td>
-                        <td className="p-5"><span className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{word.english}</span></td>
+                        <td className="p-5"><span className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{word.english || word.meaning}</span></td>
                         <td className="p-5">
                           <div className="flex flex-col items-start gap-1">
                             <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800/50 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>{word.pos}</span>
                           </div>
                         </td>
-                        <td className="p-5"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getJlptColor(word.jlpt)}`}>{word.jlpt}</span></td>
+                        <td className="p-5"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getJlptColor(word.jlpt)}`}>{word.jlpt || 'N/A'}</span></td>
                       </motion.tr>
                     );
                   })}
@@ -266,8 +368,9 @@ export default function VocabLexicon() {
               </tbody>
             </table>
           </div>
-        ) : (
-          /* DUOLINGO-STYLE GRID FOR CHARACTERS */
+
+        ) : activeCategory === 'kanji' || searchQuery !== '' ? (
+          /* STANDARD WRAPPING GRID FOR KANJI & SEARCHES */
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-4 md:gap-5">
             <AnimatePresence>
               {displayData.map((char, index) => {
@@ -283,30 +386,78 @@ export default function VocabLexicon() {
                         : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-indigo-400'
                     } ${isCharHidden ? 'opacity-50 grayscale' : ''}`}
                   >
-                    {char.jlpt && (
-                      <span className={`absolute top-2 left-2 sm:top-3 sm:left-3 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border ${getJlptColor(char.jlpt)}`}>
-                        {char.jlpt}
-                      </span>
-                    )}
-
-                    <button 
-                      onClick={(e) => toggleWordVisibility(e, char.id)} 
-                      className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 p-1.5 rounded-md transition-all ${isCharHidden ? 'text-rose-500 bg-rose-500/10' : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                    >
+                    {char.jlpt && <span className={`absolute top-2 left-2 sm:top-3 sm:left-3 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border ${getJlptColor(char.jlpt)}`}>{char.jlpt}</span>}
+                    <button onClick={(e) => toggleWordVisibility(e, char.id)} className={`absolute top-1.5 right-1.5 sm:top-2 sm:right-2 p-1.5 rounded-md transition-all ${isCharHidden ? 'text-rose-500 bg-rose-500/10' : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
                       {isCharHidden ? <Lock size={12} /> : <Unlock size={12} />}
                     </button>
-                    
-                    <span className={`text-4xl sm:text-5xl font-black mt-2 mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{char.symbol}</span>
-                    <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} text-center px-1 truncate w-full`}>
-                      {char.romaji || char.meaning}
-                    </span>
+                    <span className={`text-4xl sm:text-5xl font-black mt-2 mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{char.symbol || char.kanji}</span>
+                    <span className={`text-[10px] sm:text-[11px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} text-center px-1 truncate w-full`}>{char.romaji || char.meaning}</span>
                   </motion.div>
                 );
               })}
             </AnimatePresence>
           </div>
-        )}
 
+        ) : (
+          /* 🚨 TRADITIONAL 5-COLUMN CHART FOR KANA */
+          <div className="w-full max-w-5xl mx-auto flex flex-col gap-3 sm:gap-4 pb-12">
+            {(activeCategory === 'hiragana' ? hiraganaChart : katakanaChart).map((row, rowIndex) => (
+              <React.Fragment key={rowIndex}>
+                
+                {/* Visual Divider before Dakuten */}
+                {rowIndex === 11 && (
+                  <div className="col-span-5 flex items-center gap-4 py-4 opacity-50">
+                    <div className={`h-px flex-1 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Dakuten (濁点)</span>
+                    <div className={`h-px flex-1 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}></div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-5 gap-3 sm:gap-4">
+                  {row.map((cellChar, colIndex) => {
+                    // Render Empty Space for nulls (e.g., yi, ye, wi)
+                    if (cellChar === null) return <div key={colIndex} className="col-span-1"></div>;
+
+                    // Look for the character in the database
+                    const charEntry = displayData.find(d => (d.symbol === cellChar || d.kanji === cellChar));
+
+                    // Render Placeholder if missing from database
+                    if (!charEntry) {
+                      return (
+                        <div key={colIndex} className={`col-span-1 h-24 sm:h-28 md:h-32 rounded-2xl sm:rounded-[1.5rem] border-2 border-dashed flex flex-col items-center justify-center transition-all ${isDarkMode ? 'border-slate-800 text-slate-700' : 'border-slate-200 text-slate-300'}`}>
+                          <span className="text-2xl sm:text-4xl font-black opacity-30">{cellChar}</span>
+                        </div>
+                      );
+                    }
+
+                    // Render Standard Card
+                    const isCharHidden = hiddenWords.includes(charEntry.id);
+                    return (
+                      <motion.div
+                        key={colIndex} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                        onClick={() => setSelectedEntry(charEntry)} 
+                        className={`col-span-1 group relative flex flex-col items-center justify-center p-2 sm:p-4 h-24 sm:h-28 md:h-32 rounded-2xl sm:rounded-[1.5rem] border-2 border-b-[4px] sm:border-b-[6px] cursor-pointer transition-all active:border-b-2 active:translate-y-[2px] sm:active:translate-y-[4px] hover:-translate-y-1 ${
+                          isDarkMode 
+                            ? 'bg-[#151E2E] border-slate-700 hover:bg-[#1A233A] hover:border-indigo-500' 
+                            : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-indigo-400'
+                        } ${isCharHidden ? 'opacity-50 grayscale' : ''}`}
+                      >
+                        <button onClick={(e) => toggleWordVisibility(e, charEntry.id)} className={`absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 rounded-md transition-all ${isCharHidden ? 'text-rose-500 bg-rose-500/10' : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                          {isCharHidden ? <Lock size={10} sm:size={12} /> : <Unlock size={10} sm:size={12} />}
+                        </button>
+                        
+                        <span className={`text-2xl sm:text-4xl font-black mt-2 mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{charEntry.symbol || charEntry.kanji}</span>
+                        <span className={`text-[8px] sm:text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} text-center px-1 truncate w-full`}>
+                          {charEntry.romaji || charEntry.meaning}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
       </main>
 
       {/* 🚨 THE UPGRADED MOBILE-RESPONSIVE MODAL */}
@@ -327,7 +478,12 @@ export default function VocabLexicon() {
 
                 <button onClick={() => setSelectedEntry(null)} className={`absolute top-6 right-6 p-2 rounded-full transition-colors z-20 ${isDarkMode ? 'bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200'}`}><X size={20} /></button>
                 
-                <button className={`mb-6 p-3.5 rounded-full transition-all hover:scale-110 active:scale-95 z-10 relative ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]'}`}><Volume2 size={24} /></button>
+                <button 
+                  onClick={(e) => playAudio(e, selectedEntry.audioUrl, selectedEntry.kanji || selectedEntry.symbol)} 
+                  className={`mb-6 p-3.5 rounded-full transition-all hover:scale-110 active:scale-95 z-10 relative ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500 hover:text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]' : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-500 hover:text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]'}`}
+                >
+                  <Volume2 size={24} />
+                </button>
                 
                 <h2 className={`text-8xl md:text-9xl font-black mb-4 relative z-10 drop-shadow-lg leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {selectedEntry.kanji || selectedEntry.symbol}
@@ -352,19 +508,37 @@ export default function VocabLexicon() {
                   <p className={`text-2xl sm:text-3xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{selectedEntry.english || selectedEntry.meaning}</p>
                 </div>
 
+                {selectedEntry.images && selectedEntry.images.filter(img => !img.isHidden).length > 0 && (
+                  <div>
+                     <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 flex items-center gap-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                      <ImageIcon size={14} /> Visual Reference
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {selectedEntry.images.filter(img => !img.isHidden).map((img, i) => (
+                        <img 
+                          key={i} 
+                          src={img.url} 
+                          alt="Reference" 
+                          className={`w-full h-40 md:h-48 object-contain p-4 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-white border-slate-200'}`} 
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {selectedEntry.type === 'kanji' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className={`p-5 rounded-[1.5rem] border shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                       <h4 className={`text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
                         <div className="w-2 h-2 rounded-full bg-indigo-500"></div> Onyomi (Chinese)
                       </h4>
-                      <p className={`text-xl font-bold tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{selectedEntry.onyomi}</p>
+                      <p className={`text-xl font-bold tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{selectedEntry.onyomi || '-'}</p>
                     </div>
                     <div className={`p-5 rounded-[1.5rem] border shadow-sm ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                       <h4 className={`text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                         <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Kunyomi (Japanese)
                       </h4>
-                      <p className={`text-xl font-bold tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{selectedEntry.kunyomi}</p>
+                      <p className={`text-xl font-bold tracking-wide ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{selectedEntry.kunyomi || '-'}</p>
                     </div>
                   </div>
                 )}
@@ -374,12 +548,12 @@ export default function VocabLexicon() {
                     <Info size={20} className="text-amber-500 shrink-0 mt-0.5" />
                     <div>
                       <h4 className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-amber-500' : 'text-amber-600'}`}>Teacher Notes</h4>
-                      <p className={`text-sm font-medium leading-relaxed ${isDarkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>{selectedEntry.notes}</p>
+                      <p className={`text-sm font-medium leading-relaxed whitespace-pre-wrap ${isDarkMode ? 'text-amber-200/80' : 'text-amber-800'}`}>{selectedEntry.notes}</p>
                     </div>
                   </div>
                 )}
 
-                {(selectedEntry.sentences || selectedEntry.examples) && (
+                {((selectedEntry.sentences && selectedEntry.sentences.length > 0) || (selectedEntry.examples && selectedEntry.examples.length > 0)) && (
                   <div>
                     <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 flex items-center gap-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                       <Quote size={14} /> Context Examples
