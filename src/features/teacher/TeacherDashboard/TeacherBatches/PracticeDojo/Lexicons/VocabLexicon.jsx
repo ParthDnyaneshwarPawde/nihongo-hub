@@ -54,7 +54,8 @@ const katakanaChart = [
 
 export default function VocabLexicon() {
   const { isDarkMode } = useTheme();
-  const { batchId, categoryId } = useParams(); 
+  const categoryId = 'vocab';
+  const { batchId } = useParams(); 
   const navigate = useNavigate();
 
   const [activeCategory, setActiveCategory] = useState('all');

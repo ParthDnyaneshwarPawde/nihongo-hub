@@ -37,6 +37,10 @@ import DeckForge from './features/teacher/TeacherDashboard/TeacherBatches/Practi
 import VocabLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexicon';
 import VocabLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/VocabLexiconEditor';
 import GrammarLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/GrammarLexicon';
+import GrammarLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/GrammarLexiconEditor';
+import ReadingLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/ReadingLexiconEditor';
+import ListeningLexiconEditor from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/ListeningLexiconEditor';
+import ReadingLexicon from './features/teacher/TeacherDashboard/TeacherBatches/PracticeDojo/Lexicons/ReadingLexicon';
 
 function App() {
   const navigate = useNavigate();
@@ -181,6 +185,30 @@ function App() {
           <Route path="/batch/:batchId/lexicon/grammar" element={
             <ProtectedRoute requiredRole="teacher">
               <GrammarLexicon />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/lexicon/grammar/edit" element={
+            <ProtectedRoute requiredRole="teacher">
+              <GrammarLexiconEditor />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/batch/:batchId/lexicon/reading" element={
+            <ProtectedRoute requiredRole="teacher">
+              <ReadingLexicon />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/lexicon/reading/edit" element={
+            <ProtectedRoute requiredRole="teacher">
+              <ReadingLexiconEditor />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/lexicon/listening/edit" element={
+            <ProtectedRoute requiredRole="teacher">
+              <ListeningLexiconEditor />
             </ProtectedRoute>
           } />
 

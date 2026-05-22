@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, Save, Upload, FileSpreadsheet, Plus, 
   Trash2, Loader2, Link2, Volume2, Info, Image as ImageIcon,
-  ShieldAlert, Eye, EyeOff, BookOpen, Activity, Sparkles, Archive, Wind, Hash, MessageCircle, Type, Edit, Languages,
-  ChevronDown, AlertTriangle, Database, Edit2, Search
+  ShieldAlert, Eye, EyeOff, BookOpen, Activity, Sparkles, Archive, Hash, MessageCircle, Type, 
+  ChevronDown, AlertTriangle, Database, Edit2, Search, RefreshCcw, SkipForward
 } from 'lucide-react';
 import { db, auth } from '@services/firebase';
 import { doc, getDoc, setDoc, writeBatch, collection, query, orderBy, limit, startAfter, getDocs, deleteDoc } from 'firebase/firestore';
@@ -24,7 +24,7 @@ const generateId = (type) => `${generatePrefix(type)}_${Date.now()}_${Math.rando
 export default function VocabLexiconEditor() {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
-  const { categoryId } = useParams(); 
+  const categoryId = 'vocab';
   
   // SECURITY STATE
   const [isAuthorized, setIsAuthorized] = useState(null); 
@@ -32,6 +32,13 @@ export default function VocabLexiconEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [activeTab, setActiveTab] = useState('manual'); 
+  
+  // 🚨 CSV COLLISION ENGINE STATE (Cleaned and fully updated)
+  const [showCollisionDialog, setShowCollisionDialog] = useState(false);
+  const [csvStaging, setCsvStaging] = useState({ newItems: [], collidingItems: [] });
+  const [resolvingIndex, setResolvingIndex] = useState(0);
+  const [resolvedCollisions, setResolvedCollisions] = useState([]);
+  const [customNewId, setCustomNewId] = useState('');
 
   // DYNAMIC FORM STATE
   const [entryType, setEntryType] = useState('vocab'); 
@@ -64,12 +71,7 @@ export default function VocabLexiconEditor() {
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMoreDb, setHasMoreDb] = useState(true);
   const [isLoadingDb, setIsLoadingDb] = useState(false);
-  const [tableSearch, setTableSearch] = useState(''); // 🚨 NEW: Table Search State
-
-  // CSV COLLISION ENGINE STATE
-  const [collisionQueue, setCollisionQueue] = useState([]);
-  const [readyToBatch, setReadyToBatch] = useState([]);
-  const [conflictEditId, setConflictEditId] = useState('');
+  const [tableSearch, setTableSearch] = useState(''); 
 
   // INITIAL LOAD
   useEffect(() => {
@@ -211,7 +213,7 @@ export default function VocabLexiconEditor() {
     }
   };
 
-  // CSV UPLOAD & PARSING
+  // 🚨 NEW CSV AGGREGATOR & RESOLVER FUNCTIONS
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -219,114 +221,140 @@ export default function VocabLexiconEditor() {
     setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
-      const text = event.target.result;
-      const rows = text.split(/\r?\n/).filter(row => row.trim());
-      if (rows.length < 2) { setIsImporting(false); return alert("Empty CSV."); }
-      
-      const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
-      const newReadyToBatch = [];
-      const newCollisions = [];
+      try {
+        const text = event.target.result;
+        const rows = text.split(/\r?\n/).filter(row => row.trim());
+        if (rows.length < 2) { setIsImporting(false); return alert("Empty CSV."); }
+        
+        const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+        const newItems = [];
+        const collidingItems = [];
 
-      for (let i = 1; i < rows.length; i++) {
-        const values = rows[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || [];
-        if (values.length < 2) continue;
+        for (let i = 1; i < rows.length; i++) {
+          const values = rows[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || [];
+          if (values.length < 2) continue;
 
-        const rowData = {};
-        headers.forEach((h, idx) => { rowData[h] = values[idx] || ''; });
+          const rowData = {};
+          headers.forEach((h, idx) => { rowData[h] = values[idx] || ''; });
 
-        const derivedType = rowData.type || 'vocab';
-        const intendedId = rowData.id || generateId(derivedType);
+          const derivedType = rowData.type || 'vocab';
+          const intendedId = rowData.id || generateId(derivedType);
 
-        // Parse Complex Arrays
-        const parsedImages = rowData.imageurls ? rowData.imageurls.split(';').map(u => ({ url: u.trim(), isHidden: false })).filter(i => i.url) : [];
-        const parsedExamples = rowData.examples ? rowData.examples.split(';').map(e => e.trim()).filter(e => e) : [];
-        const parsedSentences = rowData.sentences ? rowData.sentences.split(';').map(s => {
-          const parts = s.split('|');
-          return { jp: parts[0]?.trim() || '', en: parts[1]?.trim() || '' };
-        }).filter(s => s.jp) : [];
+          const parsedImages = rowData.imageurls ? rowData.imageurls.split(';').map(u => ({ url: u.trim(), isHidden: false })).filter(i => i.url) : [];
+          const parsedExamples = rowData.examples ? rowData.examples.split(';').map(e => e.trim()).filter(e => e) : [];
+          const parsedSentences = rowData.sentences ? rowData.sentences.split(';').map(s => {
+            const parts = s.split('|');
+            return { jp: parts[0]?.trim() || '', en: parts[1]?.trim() || '' };
+          }).filter(s => s.jp) : [];
 
-        const payload = {
-          id: intendedId,
-          type: derivedType,
-          jlpt: rowData.jlpt || 'N5',
-          kanji: rowData.kanji || rowData.symbol || '',
-          kana: rowData.kana || '',
-          romaji: rowData.romaji || '',
-          english: rowData.english || rowData.meaning || '',
-          pos: rowData.pos || 'noun',
-          subType: rowData.subtype || 'Standard',
-          onyomi: rowData.onyomi || '',
-          kunyomi: rowData.kunyomi || '',
-          strokes: parseInt(rowData.strokes) || 0,
-          audioUrl: rowData.audiourl || null,
-          notes: rowData.notes || null,
-          images: parsedImages,
-          examples: parsedExamples,
-          sentences: parsedSentences,
-          updatedAt: new Date().toISOString()
-        };
+          const payload = {
+            id: intendedId, type: derivedType, jlpt: rowData.jlpt || 'N5',
+            kanji: rowData.kanji || rowData.symbol || '', kana: rowData.kana || '',
+            romaji: rowData.romaji || '', english: rowData.english || rowData.meaning || '',
+            pos: rowData.pos || 'noun', subType: rowData.subtype || 'Standard',
+            onyomi: rowData.onyomi || '', kunyomi: rowData.kunyomi || '',
+            strokes: parseInt(rowData.strokes) || 0, audioUrl: rowData.audiourl || null,
+            notes: rowData.notes || null, images: parsedImages, examples: parsedExamples,
+            sentences: parsedSentences, updatedAt: new Date().toISOString()
+          };
 
-        if (rowData.id) {
-          const docRef = doc(db, `lexicons/${categoryId}/entries`, intendedId);
-          const existingSnap = await getDoc(docRef);
-          if (existingSnap.exists()) {
-            newCollisions.push({ existing: existingSnap.data(), incoming: payload });
-            continue;
+          if (rowData.id) {
+            const docRef = doc(db, `lexicons/${categoryId}/entries`, intendedId);
+            const existingSnap = await getDoc(docRef);
+            if (existingSnap.exists()) {
+              collidingItems.push({ id: intendedId, payload: payload, existing: existingSnap.data() });
+              continue;
+            }
           }
+          newItems.push({ id: intendedId, payload: payload });
         }
-        newReadyToBatch.push(payload);
-      }
 
-      setReadyToBatch(newReadyToBatch);
-      if (newCollisions.length > 0) {
-        setCollisionQueue(newCollisions);
-        setConflictEditId(newCollisions[0].incoming.id); 
-        setIsImporting(false); 
-      } else {
-        executeBatchWrite(newReadyToBatch);
+        if (collidingItems.length > 0) {
+          setCsvStaging({ newItems, collidingItems });
+          setResolvingIndex(0);
+          setResolvedCollisions([]);
+          setCustomNewId('');
+          setShowCollisionDialog(true);
+        } else if (newItems.length > 0) {
+          commitResolvedCSV(newItems, []);
+        } else {
+          alert("No valid entries found.");
+        }
+      } catch (error) {
+        alert(`Parsing Failed: ${error.message}`);
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = null;
       }
-      if(fileInputRef.current) fileInputRef.current.value = null;
     };
     reader.readAsText(file);
   };
 
-  const executeBatchWrite = async (entriesToSave) => {
-    if (entriesToSave.length === 0) return alert("Nothing to import.");
-    setIsImporting(true);
-    try {
-      const batch = writeBatch(db);
-      let count = 0;
-      for (const entry of entriesToSave) {
-        batch.set(doc(db, `lexicons/${categoryId}/entries`, entry.id), entry);
-        if (++count >= 490) { await batch.commit(); count = 0; }
-      }
-      if (count > 0) await batch.commit();
-      
-      alert(`Successfully imported ${entriesToSave.length} entries!`);
-      loadDatabasePreview(); 
-    } catch (error) {
-      alert("Batch upload failed.");
-    } finally {
-      setIsImporting(false); setReadyToBatch([]); setCollisionQueue([]);
+  const handleResolveCollision = (action) => {
+    const currentItem = csvStaging.collidingItems[resolvingIndex];
+    let newResolved = [...resolvedCollisions];
+
+    if (action === 'overwrite') {
+      newResolved.push(currentItem);
+    } else if (action === 'save_as_new') {
+      const generatedId = customNewId.trim() || `${currentItem.id}_new_${Math.floor(Math.random() * 1000)}`;
+      newResolved.push({ id: generatedId, payload: { ...currentItem.payload, id: generatedId } });
+    }
+
+    const nextIndex = resolvingIndex + 1;
+    if (nextIndex < csvStaging.collidingItems.length) {
+      setResolvingIndex(nextIndex);
+      setCustomNewId('');
+    } else {
+      commitResolvedCSV(csvStaging.newItems, newResolved);
     }
   };
 
-  const resolveConflict = (action) => {
-    const currentConflict = collisionQueue[0];
-    let updatedBatch = [...readyToBatch];
-
-    if (action === 'replace') updatedBatch.push(currentConflict.incoming);
-    else if (action === 'rename') {
-      if (!conflictEditId.trim()) return alert("Enter a valid new ID.");
-      updatedBatch.push({ ...currentConflict.incoming, id: conflictEditId.trim() });
+  const handleResolveAll = (action) => {
+    let finalResolved = [...resolvedCollisions];
+    if (action === 'overwrite') {
+      const remainingItems = csvStaging.collidingItems.slice(resolvingIndex);
+      finalResolved = [...finalResolved, ...remainingItems];
     }
+    commitResolvedCSV(csvStaging.newItems, finalResolved);
+  };
 
-    const remaining = collisionQueue.slice(1);
-    setReadyToBatch(updatedBatch);
-    setCollisionQueue(remaining);
+  const commitResolvedCSV = async (newItems, resolvedItems) => {
+    setIsImporting(true);
+    setShowCollisionDialog(false);
+    try {
+      let batch = writeBatch(db);
+      let count = 0;
+      let totalCommitted = 0;
+      const allItems = [...newItems, ...resolvedItems];
 
-    if (remaining.length > 0) setConflictEditId(remaining[0].incoming.id);
-    else executeBatchWrite(updatedBatch);
+      for (const item of allItems) {
+        batch.set(doc(db, `lexicons/${categoryId}/entries`, item.id), item.payload);
+        count++;
+        totalCommitted++;
+
+        if (count >= 490) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+      
+      if (count > 0) await batch.commit();
+
+      if (totalCommitted > 0) {
+        alert(`Successfully imported ${totalCommitted} entries!`);
+        loadDatabasePreview(); 
+      } else {
+        alert("Upload completed, but 0 new items were added (all duplicates skipped).");
+      }
+    } catch (error) { 
+      alert(`Firebase Rejected Upload: ${error.message}`); 
+    } finally {
+      setIsImporting(false);
+      setCsvStaging({ newItems: [], collidingItems: [] });
+      setResolvedCollisions([]);
+    }
   };
 
   const downloadTemplate = (type) => {
@@ -354,8 +382,6 @@ export default function VocabLexiconEditor() {
     }
   };
 
-  // 🚨 TABLE FILTER LOGIC
-  // 🚨 TABLE FILTER LOGIC (Now includes Tags, Types, and Strokes)
   const filteredDbEntries = dbEntries.filter(entry => {
     if (!tableSearch.trim()) return true;
     const q = tableSearch.toLowerCase();
@@ -368,8 +394,6 @@ export default function VocabLexiconEditor() {
       (entry.english?.toLowerCase().includes(q)) ||
       (entry.meaning?.toLowerCase().includes(q)) ||
       (entry.id?.toLowerCase().includes(q)) ||
-      
-      // 🚨 NEW: Tag & Metadata Filtering
       (entry.type?.toLowerCase().includes(q)) ||
       (entry.jlpt?.toLowerCase().includes(q)) ||
       (entry.pos?.toLowerCase().includes(q)) ||
@@ -387,46 +411,111 @@ export default function VocabLexiconEditor() {
     </div>
   );
 
+  // 🚨 COLLISION UI HELPERS
+  const currentCollision = showCollisionDialog ? csvStaging.collidingItems[resolvingIndex] : null;
+  const currentDbItem = currentCollision ? currentCollision.existing : null;
+
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-[#0B1120] text-slate-200' : 'bg-slate-50 text-slate-900'} pb-32 relative`}>
       
-      {/* COLLISION MODAL */}
-      <AnimatePresence>
-        {collisionQueue.length > 0 && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`relative w-full max-w-3xl overflow-hidden rounded-[2.5rem] border shadow-2xl flex flex-col ${isDarkMode ? 'bg-[#0F1523] border-rose-500/30' : 'bg-white border-rose-200'}`}>
-              <div className={`p-6 border-b flex items-center gap-4 ${isDarkMode ? 'bg-rose-500/10 border-slate-800 text-rose-400' : 'bg-rose-50 border-slate-200 text-rose-600'}`}>
-                <AlertTriangle size={24} />
-                <div><h2 className="text-xl font-black">ID Collision Detected</h2><p className="text-xs font-bold opacity-80">Conflict {collisionQueue.length} remaining.</p></div>
-              </div>
-              <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className={`p-5 rounded-2xl border ${isDarkMode ? 'bg-[#151E2E] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                  <span className="text-[10px] font-black uppercase text-slate-500 mb-4 block">Current DB</span>
-                  <div className="text-4xl font-black mb-2">{collisionQueue[0].existing.kanji || collisionQueue[0].existing.symbol}</div>
-                  <div className="text-sm font-bold text-slate-400">ID: {collisionQueue[0].existing.id}</div>
+      {/* 🚨 UPDATED COLLISION RESOLUTION DIALOG */}
+      {showCollisionDialog && currentCollision && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className={`w-full max-w-2xl p-6 md:p-8 rounded-[2rem] border shadow-2xl flex flex-col ${isDarkMode ? 'bg-[#0F1523] border-slate-700' : 'bg-white border-slate-200'}`}>
+            
+            {/* Header */}
+            <div className="flex items-start justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                  <AlertTriangle size={24} />
                 </div>
-                <div className={`p-5 rounded-2xl border ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200'}`}>
-                  <span className="text-[10px] font-black uppercase text-indigo-500 mb-4 block">Incoming CSV</span>
-                  <div className="text-4xl font-black mb-2 text-indigo-500">{collisionQueue[0].incoming.kanji || collisionQueue[0].incoming.symbol}</div>
-                  <div className="text-sm font-bold text-indigo-400/80">ID: {collisionQueue[0].incoming.id}</div>
-                </div>
-              </div>
-              <div className={`p-8 border-t space-y-4 ${isDarkMode ? 'bg-[#0B1120] border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                 <div>
-                  <label className="text-[10px] font-black uppercase text-slate-500 block mb-2">Assign New ID</label>
-                  <input type="text" value={conflictEditId} onChange={e => setConflictEditId(e.target.value)} placeholder="e.g., v_unique_id" className={`w-full p-4 rounded-xl border text-sm font-bold outline-none ${isDarkMode ? 'bg-[#151E2E] border-slate-700 text-white' : 'bg-white border-slate-300'}`} />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button onClick={() => resolveConflict('replace')} className="flex-1 py-4 rounded-xl text-xs font-black uppercase bg-rose-600 text-white">Overwrite</button>
-                  <button onClick={() => resolveConflict('rename')} className="flex-1 py-4 rounded-xl text-xs font-black uppercase bg-indigo-600 text-white">Save as New</button>
-                  <button onClick={() => resolveConflict('skip')} className="flex-1 py-4 rounded-xl text-xs font-black uppercase border">Skip</button>
+                  <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>ID Collision Detected</h2>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest text-rose-500`}>
+                    Conflict {resolvingIndex + 1} of {csvStaging.collidingItems.length}
+                  </p>
                 </div>
               </div>
-            </motion.div>
+              <button onClick={() => { setShowCollisionDialog(false); setCsvStaging({newItems:[], collidingItems:[]}); setResolvedCollisions([]); }} className={`text-[10px] font-bold uppercase tracking-widest hover:underline ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Cancel Upload</button>
+            </div>
+            
+            {/* Cards Comparison */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* CURRENT DB CARD */}
+              <div className={`p-5 rounded-2xl border ${isDarkMode ? 'bg-[#151E2E] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                <h4 className={`text-[9px] font-black uppercase tracking-widest mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Current DB</h4>
+                <p className={`text-3xl font-black mb-1 truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {currentDbItem?.kanji || currentDbItem?.symbol || currentDbItem?.kana || 'Unknown'}
+                </p>
+                <p className={`text-xs font-mono opacity-60 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>ID: {currentDbItem?.id}</p>
+              </div>
+
+              {/* INCOMING CSV CARD */}
+              <div className={`p-5 rounded-2xl border ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/20' : 'bg-indigo-50 border-indigo-200'}`}>
+                <h4 className={`text-[9px] font-black uppercase tracking-widest mb-3 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Incoming CSV</h4>
+                <p className={`text-3xl font-black mb-1 truncate ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                  {currentCollision.payload.kanji || currentCollision.payload.symbol || currentCollision.payload.kana || 'Unknown'}
+                </p>
+                <p className={`text-xs font-mono opacity-60 ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>ID: {currentCollision.id}</p>
+              </div>
+            </div>
+
+            {/* Custom ID Input */}
+            <div className="mb-6">
+              <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Assign New ID (Optional)</label>
+              <input 
+                type="text" 
+                value={customNewId} 
+                onChange={(e) => setCustomNewId(e.target.value)} 
+                placeholder={`e.g., ${currentCollision.id}_alt`} 
+                className={`w-full p-2.5 rounded-lg border text-sm transition-all focus:ring-2 outline-none ${isDarkMode ? 'bg-[#0B1120] border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20 text-slate-200' : 'bg-white border-slate-300 focus:border-indigo-400 focus:ring-indigo-500/20 text-slate-900'}`} 
+              />
+            </div>
+
+            {/* Step-by-Step Action Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button 
+                onClick={() => handleResolveCollision('overwrite')} 
+                className="py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-rose-600 hover:bg-rose-500 text-white transition-colors shadow-sm"
+              >
+                Overwrite
+              </button>
+              <button 
+                onClick={() => handleResolveCollision('save_as_new')} 
+                className="py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm"
+              >
+                Save As New
+              </button>
+              <button 
+                onClick={() => handleResolveCollision('skip')} 
+                className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest border transition-colors ${isDarkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
+              >
+                Skip
+              </button>
+            </div>
+
+            {/* BULK ACTIONS */}
+            <div className={`mt-6 pt-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Bulk Actions (Applies to all {csvStaging.collidingItems.length - resolvingIndex} remaining)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button 
+                  onClick={() => handleResolveAll('overwrite')} 
+                  className={`py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center border ${isDarkMode ? 'border-rose-500/30 text-rose-400 hover:bg-rose-500/10' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
+                >
+                  <RefreshCcw size={14} className="inline mr-2" /> Overwrite All Remaining
+                </button>
+                <button 
+                  onClick={() => handleResolveAll('skip')} 
+                  className={`py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center border ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-300 text-slate-500 hover:bg-slate-100'}`}
+                >
+                  <SkipForward size={14} className="inline mr-2" /> Skip All Remaining
+                </button>
+              </div>
+            </div>
+
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       <header className={`sticky top-0 z-50 px-6 py-4 border-b flex items-center justify-between backdrop-blur-xl ${isDarkMode ? 'bg-[#0B1120]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
         <div className="flex items-center gap-4">
@@ -550,14 +639,14 @@ export default function VocabLexiconEditor() {
                     <div>
                       <div className="flex justify-between mb-2">
                         <label className="text-[10px] font-black uppercase text-slate-500"><ImageIcon size={12} className="inline mr-1"/> Images (Vocab/Stroke Order)</label>
-                        <button onClick={() => setImages([...images, { url: '', isHidden: false }])} className="px-2 py-1 rounded text-[9px] font-black uppercase bg-amber-500/20 text-amber-400 flex items-center gap-1"><Plus size={10}/> Add Image</button>
+                        <button type="button" onClick={() => setImages([...images, { url: '', isHidden: false }])} className="px-2 py-1 rounded text-[9px] font-black uppercase bg-amber-500/20 text-amber-400 flex items-center gap-1"><Plus size={10}/> Add Image</button>
                       </div>
                       <div className="space-y-3">
                         {images.map((img, i) => (
                           <div key={i} className={`flex items-center gap-3 p-2 rounded-2xl border ${isDarkMode ? 'bg-[#0B1120] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                            <button onClick={() => { const newImgs = [...images]; newImgs[i].isHidden = !newImgs[i].isHidden; setImages(newImgs); }} className={`p-2 rounded-xl ${img.isHidden ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-800 text-slate-400'}`} title="Toggle Visibility">{img.isHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                            <button type="button" onClick={() => { const newImgs = [...images]; newImgs[i].isHidden = !newImgs[i].isHidden; setImages(newImgs); }} className={`p-2 rounded-xl ${img.isHidden ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-800 text-slate-400'}`} title="Toggle Visibility">{img.isHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                             <input type="text" placeholder="https://image-url.png" value={img.url} onChange={e => { const newImgs = [...images]; newImgs[i].url = e.target.value; setImages(newImgs); }} className={`flex-1 p-2 bg-transparent text-sm font-bold outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`} />
-                            <button onClick={() => setImages(images.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 size={16}/></button>
+                            <button type="button" onClick={() => setImages(images.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 size={16}/></button>
                           </div>
                         ))}
                       </div>
@@ -570,7 +659,7 @@ export default function VocabLexiconEditor() {
                 <div className={`pt-8 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                   <div className="flex items-center justify-between mb-6">
                     <h3 className={`text-xs font-black uppercase flex items-center gap-2 ${isDarkMode ? 'text-fuchsia-400' : 'text-fuchsia-600'}`}><MessageCircle size={16}/> {entryType === 'vocab' ? 'Sentences' : 'Examples'}</h3>
-                    <button onClick={() => entryType === 'vocab' ? setSentences([...sentences, {jp:'', en:''}]) : setExamples([...examples, ''])} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-fuchsia-500/20 text-fuchsia-400 flex items-center gap-1"><Plus size={12}/> Add</button>
+                    <button type="button" onClick={() => entryType === 'vocab' ? setSentences([...sentences, {jp:'', en:''}]) : setExamples([...examples, ''])} className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase bg-fuchsia-500/20 text-fuchsia-400 flex items-center gap-1"><Plus size={12}/> Add</button>
                   </div>
                   <div className="space-y-4">
                     {entryType === 'vocab' && sentences.map((sent, i) => (
@@ -580,13 +669,13 @@ export default function VocabLexiconEditor() {
                           <div className={`h-px w-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}></div>
                           <input type="text" placeholder="e.g., I eat an apple." value={sent.en} onChange={e => { const newSents = [...sentences]; newSents[i].en = e.target.value; setSentences(newSents); }} className={`w-full bg-transparent text-xs font-bold outline-none ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
                         </div>
-                        <button onClick={() => setSentences(sentences.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500 self-center"><Trash2 size={16}/></button>
+                        <button type="button" onClick={() => setSentences(sentences.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500 self-center"><Trash2 size={16}/></button>
                       </div>
                     ))}
                     {entryType !== 'vocab' && examples.map((ex, i) => (
                       <div key={i} className={`flex items-center gap-3 p-2 rounded-2xl border ${isDarkMode ? 'bg-[#0B1120] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
                         <input type="text" placeholder={entryType === 'kanji' ? "e.g., 水曜日 (すいようび) - Wednesday" : "e.g., ありがとう - Thank you"} value={ex} onChange={e => { const newEx = [...examples]; newEx[i] = e.target.value; setExamples(newEx); }} className={`flex-1 p-2 bg-transparent text-sm font-bold outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`} />
-                        <button onClick={() => setExamples(examples.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 size={16}/></button>
+                        <button type="button" onClick={() => setExamples(examples.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-rose-500"><Trash2 size={16}/></button>
                       </div>
                     ))}
                   </div>
