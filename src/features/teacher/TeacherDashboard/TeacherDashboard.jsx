@@ -15,6 +15,8 @@ import { useStickyState } from '@/hooks/useStickyState';
 import DashboardHome from './DashboardHome/DashboardHome';
 import LiveClassrooms from './LiveClassrooms/LiveClassrooms';
 import TeacherBatches from './TeacherBatches/TeacherBatches';
+import TestSeriesManager from './TestSeriesManager/TestSeriesManager';
+import ControlUnit from './ControlUnit/ControlUnit';
 
 export default function TeacherDashboard() {
 
@@ -49,12 +51,9 @@ export default function TeacherDashboard() {
         return <TeacherBatches key="materials" />;
       case 'students':
       case 'exams':
-        return (
-          <div key={activeTab} className="p-10 text-center animate-in fade-in">
-            <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Under Construction</h2>
-            <p className="text-slate-500 text-sm">Module {activeTab} is currently being rebuilt.</p>
-          </div>
-        );
+        return <TestSeriesManager key="exams"  />;
+      case 'control_unit':
+        return <ControlUnit key="control_unit" />;
       default:
         return <DashboardHome key="dashboard" {...dashboardState} />;
     }

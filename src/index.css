@@ -50,3 +50,24 @@
 img {
   pointer-events: none;
 }
+
+/* Force colors against password managers / autofill */
+.force-white-text {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.force-slate-text {
+  color: #94a3b8 !important;
+  font-weight: 700 !important;
+}
+
+.force-dark-text {
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+}
+
+.force-light-slate-text {
+  color: #64748b !important;
+  font-weight: 700 !important;
+}

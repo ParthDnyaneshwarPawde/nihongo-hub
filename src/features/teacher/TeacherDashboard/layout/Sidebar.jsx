@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BarChart3, Tv, Users, BookOpen, Calendar, Settings, LogOut, ChevronLeft, PanelLeftOpen } from 'lucide-react';
+import { X, BarChart3, Tv, Users, BookOpen, Calendar, Settings, LogOut, ChevronLeft, PanelLeftOpen, Cpu } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useLogoutConfirm } from '@hooks/useLogoutConfirm';
 import LogoutShield from '@components/shared/LogoutShield';
@@ -110,6 +110,7 @@ export default function Sidebar({
           <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<BarChart3 size={18}/>} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => onNavigate('dashboard')} />
           <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Tv size={18}/>} label="Live Classroom" active={activeTab === 'live'} onClick={() => onNavigate('live')} />
           <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Users size={18}/>} label="Student Database" active={activeTab === 'students'} onClick={() => onNavigate('students')} />
+          <SidebarLink isCollapsed={isDesktopSidebarCollapsed} icon={<Cpu size={18}/>} label="Control Unit" active={activeTab === 'control_unit'} onClick={() => onNavigate('control_unit')} />
           
           <div className={`pt-8 mt-8 border-t border-slate-100 dark:border-slate-800 ${isDesktopSidebarCollapsed ? 'lg:mx-2 mx-0' : ''}`}>
             <p className={`text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 px-4 opacity-60 ${isDesktopSidebarCollapsed ? 'lg:hidden block' : 'block'}`}>Management</p>
